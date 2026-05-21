@@ -100,13 +100,19 @@ class MercadoLivreClient:
             )
             return None
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        """Faz uma chamada autenticada com retry simples em 429/5xx."""
+    def _request(self, method: str, path: str, use_token: bool = True, **kwargs: Any) -> Any:
+        """Faz uma chamada à API com retry simples em 429/5xx.
+
+        `use_token=False` faz a chamada sem Authorization header — útil para
+        endpoints públicos que retornam 403 quando recebem um token com
+        scopes insuficientes (ex: /sites/MLB/categories).
+        """
         url = f"{API_BASE}{path}"
         headers = kwargs.pop("headers", {}) or {}
-        token = self._get_access_token()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        if use_token:
+            token = self._get_access_token()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
 
         for attempt in range(3):
             try:
@@ -124,6 +130,12 @@ class MercadoLivreClient:
                     )
                     time.sleep(wait)
                     continue
+                # 403 com token: tenta sem token antes de desistir
+                if resp.status_code == 403 and use_token:
+                    logger.warning(
+                        "Mercado Livre 403 em %s com token. Retentando sem token.", path
+                    )
+                    return self._request(method, path, use_token=False, **kwargs)
                 resp.raise_for_status()
                 return resp.json()
             except requests.RequestException as exc:
@@ -137,9 +149,50 @@ class MercadoLivreClient:
     # ------------------------------------------------------------------
     # Endpoints
     # ------------------------------------------------------------------
+
+    # Categorias principais do MLB — usadas como fallback caso a API
+    # esteja indisponível ou retorne erro.
+    _MLB_FALLBACK_CATEGORIES: list[dict[str, str]] = [
+        {"id": "MLB1000", "name": "Eletrônicos, Áudio e Vídeo"},
+        {"id": "MLB1051", "name": "Celulares e Telefones"},
+        {"id": "MLB1648", "name": "Computação"},
+        {"id": "MLB1144", "name": "Câmeras e Acessórios"},
+        {"id": "MLB1246", "name": "TV e Vídeo"},
+        {"id": "MLB1430", "name": "Videogames"},
+        {"id": "MLB1574", "name": "Eletrodomésticos"},
+        {"id": "MLB1499", "name": "Casa e Jardim"},
+        {"id": "MLB1276", "name": "Esportes e Fitness"},
+        {"id": "MLB1132", "name": "Moda e Acessórios"},
+        {"id": "MLB1168", "name": "Beleza e Cuidado Pessoal"},
+        {"id": "MLB1196", "name": "Brinquedos e Hobbies"},
+        {"id": "MLB1234", "name": "Bebês"},
+        {"id": "MLB1403", "name": "Ferramentas"},
+        {"id": "MLB1953", "name": "Livros, Revistas e Comics"},
+        {"id": "MLB1743", "name": "Instrumentos Musicais"},
+        {"id": "MLB3937", "name": "Alimentos e Bebidas"},
+        {"id": "MLB1367", "name": "Saúde"},
+        {"id": "MLB1071", "name": "Carros, Motos e Outros"},
+        {"id": "MLB1500", "name": "Imóveis"},
+    ]
+
     def list_categories(self) -> list[dict[str, str]]:
-        """Lista todas as categorias raiz do site (ex: MLB)."""
-        return self._request("GET", f"/sites/{self.site_id}/categories")
+        """Lista todas as categorias raiz do site (ex: MLB).
+
+        Tenta o endpoint público. Se falhar, usa a lista de fallback
+        com as principais categorias do MLB.
+        """
+        try:
+            result = self._request("GET", f"/sites/{self.site_id}/categories")
+            if result:
+                return result
+        except MercadoLivreError as exc:
+            logger.warning(
+                "Não foi possível listar categorias via API (%s). "
+                "Usando fallback com %d categorias.",
+                exc,
+                len(self._MLB_FALLBACK_CATEGORIES),
+            )
+        return self._MLB_FALLBACK_CATEGORIES
 
     def search_offers(
         self,
