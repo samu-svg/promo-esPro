@@ -11,8 +11,16 @@ if ($LASTEXITCODE -ne 0) {
   exit 1
 }
 
+$owner = "samu-svg"
 $repoName = "promocoes-pro"
-& $gh repo create $repoName --public --source=. --remote=origin --description "PromoçõesPro — gestão de promoções (Supabase)" --push
+
+$login = & $gh api user -q .login 2>$null
+if ($login -ne $owner) {
+  Write-Host "Conta logada: $login (esperado: $owner)"
+  Write-Host "Se nao for samu-svg, rode: gh auth login -h github.com -p https -w"
+}
+
+& $gh repo create "$owner/$repoName" --public --source=. --remote=origin --description "PromoçõesPro — gestão de promoções (Supabase)" --push
 
 Write-Host ""
-Write-Host "Repositório criado. Veja: https://github.com/$(& $gh api user -q .login)/$repoName"
+Write-Host "Repositório: https://github.com/$owner/$repoName"

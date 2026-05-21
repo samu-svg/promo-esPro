@@ -48,19 +48,27 @@ Chaves ficam só em `.env` (não commitar). Use a chave **publishable** (`sb_pub
 
 O repositório local já tem o commit inicial. Para publicar:
 
-1. Instale/autentique o GitHub CLI (se ainda não fez):
+1. Entre na conta **samu-svg** no GitHub CLI:
 
    ```powershell
    gh auth login -h github.com -p https -w
    ```
 
-   Abra o link que aparecer, cole o código e autorize.
+   Abra https://github.com/login/device, cole o código de 8 caracteres e autorize como **samu-svg**.
 
-2. Crie o repositório remoto e envie o código:
+2. Publique o repositório:
 
    ```powershell
    Set-Location -LiteralPath 'C:\promoçõesPro'
    .\scripts\publish-github.ps1
    ```
 
-   Isso cria **`promocoes-pro`** (público) na sua conta e faz o `push`.
+   Cria e envia para: **https://github.com/samu-svg/promocoes-pro**
+
+**Alternativa (sem CLI):** crie o repo vazio em github.com/new (owner `samu-svg`, nome `promocoes-pro`), depois:
+
+   ```powershell
+   Set-Location -LiteralPath 'C:\promoçõesPro'
+   git remote add origin https://github.com/samu-svg/promocoes-pro.git
+   git push -u origin master
+   ```
