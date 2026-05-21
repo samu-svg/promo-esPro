@@ -20,7 +20,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
-  themeColor: "#ed2010",
+  themeColor: "#f97316",
 };
 
 export default function RootLayout({
@@ -30,7 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className="antialiased">
-      <body className="font-sans">{children}</body>
+      <body className="font-sans bg-white text-zinc-900">{children}</body>
     </html>
   );
 }
