@@ -15,7 +15,7 @@ function StarRating({ rating }: { rating: number | null }) {
   if (rating == null) return null;
   const rounded = Math.round(rating * 10) / 10;
   return (
-    <div className="flex items-center gap-1 text-xs font-medium text-amber-400">
+    <div className="flex items-center gap-1 text-xs font-medium text-amber-600">
       <svg
         viewBox="0 0 20 20"
         fill="currentColor"
@@ -34,9 +34,9 @@ export function PromocaoCard({ promo }: { promo: Promocao }) {
   const desconto = Math.round(promo.percentual_desconto);
 
   return (
-    <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/40 hover:shadow-lg">
-      {/* Image area */}
-      <div className="relative aspect-square overflow-hidden bg-zinc-50">
+    <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+      {/* Imagem + badge de desconto */}
+      <div className="relative aspect-square overflow-hidden bg-zinc-100">
         {promo.foto_url ? (
           <Image
             src={promo.foto_url}
@@ -47,25 +47,21 @@ export function PromocaoCard({ promo }: { promo: Promocao }) {
             unoptimized
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-zinc-400 text-xs">
+          <div className="flex h-full w-full items-center justify-center text-zinc-300">
             sem imagem
           </div>
         )}
-
-        {/* Discount badge */}
-        <span className="absolute left-3 top-3 rounded-full bg-green-500 px-2.5 py-1 text-xs font-bold text-white shadow-md">
+        <span className="absolute left-3 top-3 rounded-full bg-brand-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
           -{desconto}%
         </span>
-
-        {/* Star rating */}
         {promo.avaliacao != null && (
-          <span className="absolute right-3 top-3 rounded-full bg-white/95 px-2 py-1 shadow backdrop-blur-sm">
+          <span className="absolute right-3 top-3 rounded-full bg-white/95 px-2 py-1 shadow">
             <StarRating rating={promo.avaliacao} />
           </span>
         )}
       </div>
 
-      {/* Content */}
+      {/* Conteúdo */}
       <div className="flex flex-1 flex-col gap-3 p-4">
         <h3 className="line-clamp-2 min-h-[2.6rem] text-sm font-semibold leading-snug text-zinc-900">
           {promo.titulo}
@@ -75,27 +71,25 @@ export function PromocaoCard({ promo }: { promo: Promocao }) {
           <p className="line-clamp-2 text-xs text-zinc-500">{promo.descricao}</p>
         )}
 
-        {/* Pricing */}
         <div className="mt-auto space-y-1">
           <p className="text-xs text-zinc-400 line-through">
             {formatarPreco(promo.preco_original)}
           </p>
-          <p className="text-2xl font-extrabold tracking-tight text-orange-500">
+          <p className="text-2xl font-extrabold tracking-tight text-emerald-600">
             {formatarPreco(promo.preco_desconto)}
           </p>
-          <p className="text-xs font-medium text-green-500">
+          <p className="text-xs font-medium text-emerald-700">
             economize {formatarPreco(economia)}
           </p>
         </div>
 
-        {/* CTA button */}
         <a
           href={promo.link_afiliado}
           target="_blank"
           rel="noopener noreferrer sponsored"
-          className="mt-1 flex h-11 w-full items-center justify-center rounded-xl bg-orange-500 text-sm font-bold text-white shadow-[0_0_16px_rgba(249,115,22,0.3)] transition-all duration-200 hover:bg-orange-400 hover:shadow-[0_0_24px_rgba(249,115,22,0.5)] focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-white"
+          className="mt-1 flex h-11 w-full items-center justify-center rounded-xl bg-zinc-900 text-sm font-semibold text-white transition-colors hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
         >
-          Ver oferta →
+          Comprar agora →
         </a>
       </div>
     </article>

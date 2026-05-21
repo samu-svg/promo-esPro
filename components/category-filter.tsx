@@ -10,28 +10,8 @@ type Props = {
   onSelect: (categoria: string) => void;
 };
 
-const ICONES_CATEGORIAS: Record<string, string> = {
-  Todas:             "🏷️",
-  Tecnologia:        "💻",
-  "Roupas e Moda":   "👕",
-  Calçados:          "👟",
-  "Casa e Decoração":"🏠",
-  Eletrodomésticos:  "🔌",
-  Beleza:            "💄",
-  Esportes:          "⚽",
-  Brinquedos:        "🧸",
-  Alimentos:         "🍎",
-  Livros:            "📚",
-  Automotivo:        "🚗",
-};
-
-function getIcone(categoria: string): string {
-  return ICONES_CATEGORIAS[categoria] ?? "🛍️";
-}
-
 export function CategoryFilter({ categorias, selecionada, onSelect }: Props) {
   const lista = [CATEGORIA_TODAS, ...categorias];
-
   return (
     <div className="hide-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-2 md:flex-wrap md:overflow-visible md:px-0">
       {lista.map((cat) => {
@@ -42,15 +22,12 @@ export function CategoryFilter({ categorias, selecionada, onSelect }: Props) {
             type="button"
             onClick={() => onSelect(cat)}
             className={clsx(
-              "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-medium transition-all duration-200 md:text-sm",
+              "shrink-0 rounded-full border px-4 py-2 text-xs font-medium transition-all md:text-sm",
               ativa
-                ? "border-orange-500 bg-orange-500 text-white shadow-[0_0_12px_rgba(249,115,22,0.4)]"
-                : "border-zinc-200 bg-white text-zinc-600 hover:border-orange-500/40 hover:bg-orange-50 hover:text-zinc-900",
+                ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
             )}
           >
-            <span role="img" aria-label={cat} className="text-sm">
-              {getIcone(cat)}
-            </span>
             {cat}
           </button>
         );
