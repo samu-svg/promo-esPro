@@ -27,3 +27,7 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 *.log
+
+# Scripts internos de orquestração
+.commit-msg.txt
+.*.bat
