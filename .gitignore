@@ -31,3 +31,4 @@ Thumbs.db
 # Scripts internos de orquestração
 .commit-msg.txt
 .*.bat
+response.html
