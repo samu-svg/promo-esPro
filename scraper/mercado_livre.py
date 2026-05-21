@@ -1,26 +1,38 @@
-"""Cliente da API do Mercado Livre para o scraper PromoçãoPro.
+"""Cliente de promoções do Mercado Livre — estratégia via página pública.
 
-Responsabilidades:
-- Autenticar via OAuth 2.0 (client_credentials).
-- Listar todas as categorias do site informado (default: MLB).
-- Buscar ofertas com desconto mínimo em cada categoria.
-- Consultar a média de avaliações de cada item.
-- Construir o link de afiliado a partir do permalink.
-- Expor o pipeline completo via `fetch_promotions(...)`.
+A API REST `/sites/MLB/search` exige permissões de PolicyAgent que o
+grant `client_credentials` não concede. Este módulo contorna isso
+extraindo os dados diretamente da página de ofertas
+(mercadolivre.com.br/ofertas), que já entrega preço original, desconto,
+avaliações e foto sem autenticação.
+
+Vantagens:
+- Não depende de scopes OAuth para busca de produtos.
+- A página já filtra itens em promoção (todos têm desconto real).
+- Suporta filtro por categoria via query string `?filter=<cat_id>`.
+- Retorna até 48 itens por página (padrão da página de ofertas ML).
 """
 from __future__ import annotations
 
 import logging
+import re
 import time
+import json
 from dataclasses import dataclass, asdict
-from typing import Any, Iterable
-from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from typing import Any
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl, urljoin
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-API_BASE = "https://api.mercadolibre.com"
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+_OFERTAS_URL = "https://www.mercadolivre.com.br/ofertas"
+_IMG_BASE = "https://http2.mlstatic.com/D_{pic_id}-O.webp"
 
 
 @dataclass
@@ -42,234 +54,174 @@ class Promocao:
 
 
 class MercadoLivreError(RuntimeError):
-    """Erro genérico em chamadas à API do Mercado Livre."""
+    """Erro genérico ao raspar a página de ofertas do Mercado Livre."""
+
+
+# ---------------------------------------------------------------------------
+# Categorias disponíveis na página de ofertas (descobertas automaticamente
+# mas mantidas aqui como fallback para execuções sem rede à página de filtros)
+# ---------------------------------------------------------------------------
+MLB_CATEGORIAS: list[dict[str, str]] = [
+    {"id": "MLB5672",   "name": "Acessórios para Veículos"},
+    {"id": "MLB1384",   "name": "Bebês"},
+    {"id": "MLB1246",   "name": "Beleza e Cuidado Pessoal"},
+    {"id": "MLB1132",   "name": "Brinquedos e Hobbies"},
+    {"id": "MLB1430",   "name": "Calçados, Roupas e Bolsas"},
+    {"id": "MLB1574",   "name": "Casa, Móveis e Decoração"},
+    {"id": "MLB1051",   "name": "Celulares e Telefones"},
+    {"id": "MLB1500",   "name": "Construção"},
+    {"id": "MLB5726",   "name": "Eletrodomésticos"},
+    {"id": "MLB1000",   "name": "Eletrônicos, Áudio e Vídeo"},
+    {"id": "MLB1276",   "name": "Esportes e Fitness"},
+    {"id": "MLB263532", "name": "Ferramentas"},
+    {"id": "MLB1144",   "name": "Games"},
+    {"id": "MLB1648",   "name": "Informática"},
+    {"id": "MLB3937",   "name": "Joias e Relógios"},
+    {"id": "MLB1196",   "name": "Livros, Revistas e Comics"},
+    {"id": "MLB1071",   "name": "Pet Shop"},
+    {"id": "MLB264586", "name": "Saúde"},
+]
 
 
 class MercadoLivreClient:
-    """Cliente leve para a API pública do Mercado Livre."""
+    """Raspa a página pública de ofertas do Mercado Livre Brasil."""
 
     def __init__(
         self,
-        client_id: str,
-        client_secret: str,
-        affiliate_id: str,
+        client_id: str = "",
+        client_secret: str = "",
+        affiliate_id: str = "andeciofmendes",
         site_id: str = "MLB",
-        timeout: int = 15,
+        timeout: int = 20,
     ) -> None:
-        self.client_id = client_id
-        self.client_secret = client_secret
+        # client_id/secret mantidos para compatibilidade com o config.py
+        # mas não são usados nesta implementação
         self.affiliate_id = affiliate_id
         self.site_id = site_id
         self.timeout = timeout
         self._session = requests.Session()
-        self._token: str | None = None
-        self._token_expires_at: float = 0.0
+        self._session.headers.update({
+            "User-Agent": _UA,
+            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        })
 
     # ------------------------------------------------------------------
-    # Autenticação
+    # Extração de dados da página
     # ------------------------------------------------------------------
-    def _get_access_token(self) -> str | None:
-        """Retorna um access_token válido, renovando se necessário.
-
-        Endpoints públicos (categories, search, reviews) funcionam sem token,
-        porém com token os limites de rate são bem mais altos. Se o token
-        falhar, seguimos sem ele (modo público).
-        """
-        if self._token and time.time() < self._token_expires_at - 60:
-            return self._token
-
-        try:
-            resp = self._session.post(
-                f"{API_BASE}/oauth/token",
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                },
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._token = data["access_token"]
-            self._token_expires_at = time.time() + int(data.get("expires_in", 21600))
-            logger.info("Mercado Livre: token OAuth obtido com sucesso.")
-            return self._token
-        except requests.RequestException as exc:
-            logger.warning(
-                "Falha ao obter token OAuth (%s). Seguindo em modo público.", exc
-            )
-            return None
-
-    def _request(self, method: str, path: str, use_token: bool = True, **kwargs: Any) -> Any:
-        """Faz uma chamada à API com retry simples em 429/5xx.
-
-        `use_token=False` faz a chamada sem Authorization header — útil para
-        endpoints públicos que retornam 403 quando recebem um token com
-        scopes insuficientes (ex: /sites/MLB/categories).
-        """
-        url = f"{API_BASE}{path}"
-        headers = kwargs.pop("headers", {}) or {}
-        if use_token:
-            token = self._get_access_token()
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-
+    def _fetch_page_data(self, url: str) -> dict[str, Any]:
+        """Faz GET na URL e extrai o JSON de dados embutido no HTML."""
         for attempt in range(3):
             try:
-                resp = self._session.request(
-                    method, url, headers=headers, timeout=self.timeout, **kwargs
-                )
-                if resp.status_code == 429 or 500 <= resp.status_code < 600:
-                    wait = 2 ** attempt
-                    logger.warning(
-                        "Mercado Livre %s %s -> %s. Retry em %ss",
-                        method,
-                        path,
-                        resp.status_code,
-                        wait,
-                    )
-                    time.sleep(wait)
-                    continue
-                # 403 com token: tenta sem token antes de desistir
-                if resp.status_code == 403 and use_token:
-                    logger.warning(
-                        "Mercado Livre 403 em %s com token. Retentando sem token.", path
-                    )
-                    return self._request(method, path, use_token=False, **kwargs)
+                resp = self._session.get(url, timeout=self.timeout)
                 resp.raise_for_status()
-                return resp.json()
+                break
             except requests.RequestException as exc:
                 if attempt == 2:
-                    raise MercadoLivreError(
-                        f"Falha ao chamar {method} {path}: {exc}"
-                    ) from exc
-                time.sleep(2 ** attempt)
-        raise MercadoLivreError(f"Falha após retries em {method} {path}")
+                    raise MercadoLivreError(f"Falha ao buscar {url}: {exc}") from exc
+                wait = 2 ** attempt
+                logger.warning("Tentativa %d falhou para %s: %s. Aguardando %ds.", attempt + 1, url, exc, wait)
+                time.sleep(wait)
+
+        html = resp.text
+        # o JSON fica em um script como: _n.ctx.r={...}; _n.
+        scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
+        for script in scripts:
+            m = re.search(r"_n\.ctx\.r\s*=\s*(\{.*?);\s*_n\.", script, re.DOTALL)
+            if not m:
+                continue
+            try:
+                data = json.loads(m.group(1))
+                page = (
+                    data.get("appProps", {})
+                        .get("pageProps", {})
+                        .get("data", {})
+                )
+                if page.get("items"):
+                    return page
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+        return {}
 
     # ------------------------------------------------------------------
-    # Endpoints
+    # Listagem de categorias
     # ------------------------------------------------------------------
-
-    # Categorias principais do MLB — usadas como fallback caso a API
-    # esteja indisponível ou retorne erro.
-    _MLB_FALLBACK_CATEGORIES: list[dict[str, str]] = [
-        {"id": "MLB1000", "name": "Eletrônicos, Áudio e Vídeo"},
-        {"id": "MLB1051", "name": "Celulares e Telefones"},
-        {"id": "MLB1648", "name": "Computação"},
-        {"id": "MLB1144", "name": "Câmeras e Acessórios"},
-        {"id": "MLB1246", "name": "TV e Vídeo"},
-        {"id": "MLB1430", "name": "Videogames"},
-        {"id": "MLB1574", "name": "Eletrodomésticos"},
-        {"id": "MLB1499", "name": "Casa e Jardim"},
-        {"id": "MLB1276", "name": "Esportes e Fitness"},
-        {"id": "MLB1132", "name": "Moda e Acessórios"},
-        {"id": "MLB1168", "name": "Beleza e Cuidado Pessoal"},
-        {"id": "MLB1196", "name": "Brinquedos e Hobbies"},
-        {"id": "MLB1234", "name": "Bebês"},
-        {"id": "MLB1403", "name": "Ferramentas"},
-        {"id": "MLB1953", "name": "Livros, Revistas e Comics"},
-        {"id": "MLB1743", "name": "Instrumentos Musicais"},
-        {"id": "MLB3937", "name": "Alimentos e Bebidas"},
-        {"id": "MLB1367", "name": "Saúde"},
-        {"id": "MLB1071", "name": "Carros, Motos e Outros"},
-        {"id": "MLB1500", "name": "Imóveis"},
-    ]
-
     def list_categories(self) -> list[dict[str, str]]:
-        """Lista todas as categorias raiz do site (ex: MLB).
-
-        Tenta o endpoint público. Se falhar, usa a lista de fallback
-        com as principais categorias do MLB.
-        """
+        """Retorna as categorias disponíveis na página de ofertas."""
         try:
-            result = self._request("GET", f"/sites/{self.site_id}/categories")
-            if result:
-                return result
+            page = self._fetch_page_data(_OFERTAS_URL)
+            cats = []
+            for f in page.get("availableFilters", []):
+                if f.get("id") == "category":
+                    for v in f.get("values", []):
+                        cats.append({"id": v["id"], "name": v.get("name", v["id"])})
+            if cats:
+                logger.info("Categorias obtidas da página: %d", len(cats))
+                return cats
         except MercadoLivreError as exc:
-            logger.warning(
-                "Não foi possível listar categorias via API (%s). "
-                "Usando fallback com %d categorias.",
-                exc,
-                len(self._MLB_FALLBACK_CATEGORIES),
-            )
-        return self._MLB_FALLBACK_CATEGORIES
+            logger.warning("Não foi possível obter categorias da página: %s. Usando fallback.", exc)
+        logger.info("Usando lista de categorias fallback (%d).", len(MLB_CATEGORIAS))
+        return MLB_CATEGORIAS
 
+    # ------------------------------------------------------------------
+    # Busca de ofertas por categoria
+    # ------------------------------------------------------------------
     def search_offers(
         self,
         category_id: str,
         min_discount_percent: float = 30.0,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """Busca itens de uma categoria com desconto >= min_discount_percent.
-
-        Usa o filtro `discount=<min>-100` da API de busca, que já retorna
-        apenas itens em promoção dentro da faixa. Retorna a lista bruta.
-        """
-        min_disc = max(1, int(round(min_discount_percent)))
-        params = {
-            "category": category_id,
-            "discount": f"{min_disc}-100",
-            "limit": limit,
-            "condition": "new",
-        }
+        """Retorna itens em promoção de uma categoria, já parseados."""
+        url = f"{_OFERTAS_URL}?filter={category_id}"
         try:
-            data = self._request(
-                "GET", f"/sites/{self.site_id}/search", params=params
-            )
+            page = self._fetch_page_data(url)
         except MercadoLivreError as exc:
             logger.warning("Busca falhou para categoria %s: %s", category_id, exc)
             return []
-        return data.get("results", [])
 
-    def get_item_rating(self, item_id: str) -> float | None:
-        """Retorna a média de avaliações (0-5) do item, ou None se indisponível."""
-        try:
-            data = self._request("GET", f"/reviews/item/{item_id}")
-        except MercadoLivreError:
-            return None
-        rating = data.get("rating_average")
-        if isinstance(rating, (int, float)):
-            return float(rating)
-        return None
+        raw_items = page.get("items", [])
+        result = []
+        for raw in raw_items:
+            promo = self._parse_item(raw, min_discount_percent)
+            if promo is not None:
+                result.append(promo)
+        return result
 
     # ------------------------------------------------------------------
     # Afiliado
     # ------------------------------------------------------------------
     def build_affiliate_link(self, permalink: str) -> str:
-        """Anexa parâmetros de tracking do programa Afiliados Brasil ao permalink.
-
-        Para tracking completo via short-link oficial, é preciso usar a
-        Afiliados API (OAuth da conta de afiliado). Quando você ativar,
-        basta trocar esta função pela chamada de geração de short-link.
-        """
+        """Adiciona parâmetros de tracking do programa Afiliados Brasil."""
         if not permalink:
             return permalink
+        if not permalink.startswith("http"):
+            permalink = "https://" + permalink
         parsed = urlparse(permalink)
         query = dict(parse_qsl(parsed.query))
-        query.update(
-            {
-                "matt_word": self.affiliate_id,
-                "matt_tool": "affiliate",
-                "ref": self.affiliate_id,
-            }
-        )
+        query.update({
+            "matt_word": self.affiliate_id,
+            "matt_tool": "affiliate",
+            "ref": self.affiliate_id,
+        })
         return urlunparse(parsed._replace(query=urlencode(query)))
 
     # ------------------------------------------------------------------
-    # Pipeline
+    # Pipeline principal
     # ------------------------------------------------------------------
     def fetch_promotions(
         self,
         min_discount_percent: float = 30.0,
         min_rating: float = 4.0,
         max_items_per_category: int = 50,
-        category_ids: Iterable[str] | None = None,
+        category_ids: list[str] | None = None,
     ) -> list[Promocao]:
-        """Pipeline completo: percorre categorias, filtra por desconto e estrelas."""
-        if category_ids is None:
-            categories = self.list_categories()
-        else:
+        """Percorre categorias e retorna promoções que passam nos filtros."""
+        if category_ids is not None:
             categories = [{"id": cid, "name": cid} for cid in category_ids]
+        else:
+            categories = self.list_categories()
 
         logger.info(
             "Iniciando varredura em %d categorias (desc>=%.0f%%, rating>=%.1f).",
@@ -279,26 +231,32 @@ class MercadoLivreClient:
         )
 
         promotions: list[Promocao] = []
-        for category in categories:
-            cat_id = category["id"]
-            cat_name = category.get("name", cat_id)
+        for cat in categories:
+            cat_id = cat["id"]
+            cat_name = cat.get("name", cat_id)
+
             items = self.search_offers(
                 cat_id,
                 min_discount_percent=min_discount_percent,
                 limit=max_items_per_category,
             )
-            logger.info("Categoria %s (%s): %d itens.", cat_name, cat_id, len(items))
 
-            for item in items:
-                promo = self._parse_item(item, cat_name, min_discount_percent)
-                if promo is None:
-                    continue
+            aprovados = [
+                p for p in items
+                if p.avaliacao is not None and p.avaliacao >= min_rating
+            ]
+            logger.info(
+                "Categoria %s (%s): %d itens, %d passaram no rating.",
+                cat_name, cat_id, len(items), len(aprovados),
+            )
 
-                rating = self.get_item_rating(promo.external_id)
-                if rating is None or rating < min_rating:
-                    continue
-                promo.avaliacao = rating
-                promotions.append(promo)
+            # atribuir categoria ao nome real
+            for p in aprovados:
+                p.categoria = cat_name
+
+            promotions.extend(aprovados)
+            # pausa curta entre categorias para não sobrecarregar
+            time.sleep(1.5)
 
         logger.info(
             "Varredura concluída: %d promoções aprovadas pelos filtros básicos.",
@@ -311,37 +269,66 @@ class MercadoLivreClient:
     # ------------------------------------------------------------------
     def _parse_item(
         self,
-        item: dict[str, Any],
-        cat_name: str | None,
+        raw: dict[str, Any],
         min_discount_percent: float,
     ) -> Promocao | None:
-        """Converte um item bruto da API em `Promocao` aplicando o filtro de desconto.
+        """Converte um item bruto da página em Promocao."""
+        try:
+            card = raw["card"]
+            comps = {c["type"]: c for c in card["components"]}
+            meta = card["metadata"]
 
-        Retorna None se não tem `original_price` ou se o desconto calculado
-        ficou abaixo do mínimo (defensive — a API às vezes ignora o filtro).
-        """
-        original = item.get("original_price")
-        price = item.get("price")
-        if not original or not price or original <= price:
+            price_data = comps.get("price", {}).get("price", {})
+            prev = price_data.get("previous_price", {}).get("value")
+            curr = price_data.get("current_price", {}).get("value")
+
+            if not prev or not curr or prev <= curr:
+                return None
+
+            pct = round((1 - curr / prev) * 100, 2)
+            if pct < min_discount_percent:
+                return None
+
+            # avaliação
+            rev = comps.get("reviews", {}).get("reviews", {})
+            rating = rev.get("rating_average")
+            if isinstance(rating, (int, float)):
+                rating = float(rating)
+            else:
+                rating = None
+
+            # foto
+            pic_id = card.get("pictures", {}).get("pictures", [{}])[0].get("id", "")
+            foto_url = _IMG_BASE.format(pic_id=pic_id) if pic_id else None
+
+            # link e título
+            url_path = meta.get("url", "")
+            if not url_path.startswith("http"):
+                url_path = "https://" + url_path
+            affiliate_link = self.build_affiliate_link(url_path)
+
+            titulo = ""
+            title_comp = comps.get("title", {}).get("title", {})
+            if isinstance(title_comp, dict):
+                titulo = title_comp.get("text", "") or title_comp.get("long_title", "")
+            elif isinstance(title_comp, list):
+                for tc in title_comp:
+                    if isinstance(tc, dict):
+                        titulo = tc.get("text", "")
+                        if titulo:
+                            break
+
+            return Promocao(
+                external_id=meta["id"],
+                titulo=titulo,
+                preco_original=float(prev),
+                preco_desconto=float(curr),
+                percentual_desconto=pct,
+                foto_url=foto_url,
+                link_afiliado=affiliate_link,
+                categoria=None,  # preenchido em fetch_promotions
+                avaliacao=rating,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.debug("Item ignorado (parse error): %s", exc)
             return None
-
-        discount_pct = round((1 - price / original) * 100, 2)
-        if discount_pct < min_discount_percent:
-            return None
-
-        permalink = item.get("permalink") or ""
-        thumbnail = item.get("thumbnail") or ""
-        if thumbnail.startswith("http://"):
-            thumbnail = "https://" + thumbnail[len("http://") :]
-
-        return Promocao(
-            external_id=item["id"],
-            titulo=item.get("title") or "",
-            preco_original=float(original),
-            preco_desconto=float(price),
-            percentual_desconto=discount_pct,
-            foto_url=thumbnail or None,
-            link_afiliado=self.build_affiliate_link(permalink),
-            categoria=cat_name,
-            avaliacao=None,
-        )
