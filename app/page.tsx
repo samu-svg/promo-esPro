@@ -2,10 +2,15 @@ import { PromocoesList } from "@/components/promocoes-list";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Promocao } from "@/lib/types";
 
+// Renderiza on-demand. Evita pre-render no build (que falharia caso as
+// env vars do Supabase ainda não estejam cadastradas na Vercel).
+export const dynamic = "force-dynamic";
 export const revalidate = 60;
 
 async function buscarPromocoes(): Promise<Promocao[]> {
   const supabase = createSupabaseServerClient();
+  if (!supabase) return [];
+
   const { data, error } = await supabase
     .from("promocoes")
     .select("*")

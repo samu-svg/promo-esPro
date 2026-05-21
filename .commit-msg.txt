@@ -1,0 +1,10 @@
+fix: tolerar env vars do Supabase ausentes durante o build
+
+- createSupabaseServerClient/getSupabaseBrowserClient retornam null
+  em vez de lançar quando NEXT_PUBLIC_SUPABASE_* faltam
+- page.tsx usa force-dynamic + fallback para lista vazia
+- PromocoesList faz early return se Realtime indisponível
+
+Isto destrava o primeiro deploy na Vercel antes do cadastro das envs;
+basta depois adicionar NEXT_PUBLIC_SUPABASE_URL e
+NEXT_PUBLIC_SUPABASE_ANON_KEY no projeto e fazer redeploy.

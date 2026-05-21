@@ -22,6 +22,7 @@ export function PromocoesList({ promocoesIniciais }: Props) {
   // ------------------------------------------------------------------
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
 
     const channel = supabase
       .channel("promocoes-feed")

@@ -1,17 +1,21 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Cliente Supabase para uso em Server Components / Route Handlers.
- * Como o front-end é somente leitura e a RLS já filtra `aprovada=true`,
- * podemos usar o cliente direto com a chave publishable, sem cookies.
+ * Cliente Supabase para Server Components / Route Handlers.
+ *
+ * Retorna `null` se as env vars não estiverem definidas, em vez de lançar
+ * exceção — isso permite que o build prossiga em ambientes ainda sem
+ * configuração (ex: primeiro deploy na Vercel antes de cadastrar
+ * `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
  */
-export function createSupabaseServerClient() {
+export function createSupabaseServerClient(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) {
-    throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY ausentes no .env.local",
+    console.warn(
+      "[supabase/server] NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY ausentes — retornando null.",
     );
+    return null;
   }
   return createClient(url, key, {
     auth: { persistSession: false },
