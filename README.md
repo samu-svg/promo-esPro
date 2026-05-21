@@ -13,20 +13,38 @@ Projeto novo, separado do antigo **Sistema de Cobrança** (`C:\cobranca sistema 
 
 O banco `public` ainda está vazio — próximo passo: criar tabelas/migrations.
 
+## App web (Next.js)
+
+```bash
+npm install
+npm run dev
+```
+
+Abra http://localhost:3000 — a página confirma a conexão com o Supabase.
+
 ## Configuração local
 
 1. Copie as variáveis (se ainda não tiver `.env`):
 
-   ```bash
+   ```powershell
    copy .env.example .env
    ```
 
-2. Instale dependências e teste a conexão:
+2. Instale e teste:
 
    ```bash
    npm install
    npm run test:supabase
+   npm run build
    ```
+
+## Deploy na Vercel
+
+1. Importe **https://github.com/samu-svg/promo-esPro**
+2. Em **Environment Variables**, adicione:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. Deploy — framework detectado: **Next.js**
 
 3. (Opcional) CLI Supabase para migrations:
 
