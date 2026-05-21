@@ -1,0 +1,15 @@
+# PromoçõesPro — link com o projeto na nuvem
+# Com Supabase CLI: supabase link --project-ref xtgnqttklwsyecrutmut
+
+project_id = "xtgnqttklwsyecrutmut"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
