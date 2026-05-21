@@ -63,12 +63,12 @@ O repositório local já tem o commit inicial. Para publicar:
    .\scripts\publish-github.ps1
    ```
 
-   Cria e envia para: **https://github.com/samu-svg/promocoes-pro**
+   Repositório: **https://github.com/samu-svg/promo-esPro**
 
-**Alternativa (sem CLI):** crie o repo vazio em github.com/new (owner `samu-svg`, nome `promocoes-pro`), depois:
+**Sincronizar (URL já definida):**
 
    ```powershell
    Set-Location -LiteralPath 'C:\promoçõesPro'
-   git remote add origin https://github.com/samu-svg/promocoes-pro.git
+   .\scripts\sync-github.ps1 -RepoUrl https://github.com/samu-svg/promo-esPro.git
    git push -u origin master
    ```

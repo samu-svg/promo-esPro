@@ -12,7 +12,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $owner = "samu-svg"
-$repoName = "promocoes-pro"
+$repoName = "promo-esPro"
 
 $login = & $gh api user -q .login 2>$null
 if ($login -ne $owner) {

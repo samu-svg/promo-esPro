@@ -13,7 +13,7 @@ if ($login -ne "samu-svg") {
 }
 
 $owner = "samu-svg"
-$repo = "promocoes-pro"
+$repo = "promo-esPro"
 
 # Cria o repo se ainda nao existir
 $exists = & $gh repo view "$owner/$repo" 2>$null
