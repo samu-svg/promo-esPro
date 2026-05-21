@@ -1,0 +1,97 @@
+import Image from "next/image";
+
+import type { Promocao } from "@/lib/types";
+
+const formatadorBRL = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
+function formatarPreco(valor: number): string {
+  return formatadorBRL.format(valor);
+}
+
+function StarRating({ rating }: { rating: number | null }) {
+  if (rating == null) return null;
+  const rounded = Math.round(rating * 10) / 10;
+  return (
+    <div className="flex items-center gap-1 text-xs font-medium text-amber-600">
+      <svg
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        className="h-3.5 w-3.5"
+        aria-hidden
+      >
+        <path d="M9.05 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.367 2.446a1 1 0 00-.364 1.118l1.287 3.957c.3.922-.755 1.688-1.539 1.118L10 15.347l-3.366 2.446c-.784.57-1.838-.196-1.539-1.118l1.287-3.957a1 1 0 00-.364-1.118L2.65 9.354c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69l1.7-3.927z" />
+      </svg>
+      {rounded.toFixed(1)}
+    </div>
+  );
+}
+
+export function PromocaoCard({ promo }: { promo: Promocao }) {
+  const economia = promo.preco_original - promo.preco_desconto;
+  const desconto = Math.round(promo.percentual_desconto);
+
+  return (
+    <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+      {/* Imagem + badge de desconto */}
+      <div className="relative aspect-square overflow-hidden bg-zinc-100">
+        {promo.foto_url ? (
+          <Image
+            src={promo.foto_url}
+            alt={promo.titulo}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+            className="object-contain p-4 transition-transform duration-500 group-hover:scale-105"
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-zinc-300">
+            sem imagem
+          </div>
+        )}
+        <span className="absolute left-3 top-3 rounded-full bg-brand-600 px-2.5 py-1 text-xs font-bold text-white shadow-md">
+          -{desconto}%
+        </span>
+        {promo.avaliacao != null && (
+          <span className="absolute right-3 top-3 rounded-full bg-white/95 px-2 py-1 shadow">
+            <StarRating rating={promo.avaliacao} />
+          </span>
+        )}
+      </div>
+
+      {/* Conteúdo */}
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <h3 className="line-clamp-2 min-h-[2.6rem] text-sm font-semibold leading-snug text-zinc-900">
+          {promo.titulo}
+        </h3>
+
+        {promo.descricao && (
+          <p className="line-clamp-2 text-xs text-zinc-500">{promo.descricao}</p>
+        )}
+
+        <div className="mt-auto space-y-1">
+          <p className="text-xs text-zinc-400 line-through">
+            {formatarPreco(promo.preco_original)}
+          </p>
+          <p className="text-2xl font-extrabold tracking-tight text-emerald-600">
+            {formatarPreco(promo.preco_desconto)}
+          </p>
+          <p className="text-xs font-medium text-emerald-700">
+            economize {formatarPreco(economia)}
+          </p>
+        </div>
+
+        <a
+          href={promo.link_afiliado}
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          className="mt-1 flex h-11 w-full items-center justify-center rounded-xl bg-zinc-900 text-sm font-semibold text-white transition-colors hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+        >
+          Comprar agora →
+        </a>
+      </div>
+    </article>
+  );
+}

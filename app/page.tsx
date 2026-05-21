@@ -1,64 +1,57 @@
-import { createClient } from "@/lib/supabase/server";
-import { getSupabaseEnv } from "@/lib/env";
+import { PromocoesList } from "@/components/promocoes-list";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { Promocao } from "@/lib/types";
 
-export default async function Home() {
-  const env = getSupabaseEnv();
+export const revalidate = 60;
 
-  if (!env) {
-    return (
-      <main>
-        <h1>PromoçõesPro</h1>
-        <p className="warn">
-          Variáveis de ambiente do Supabase não configuradas neste deploy.
-        </p>
-        <div className="card">
-          <p>
-            Na <strong>Vercel</strong> → projeto <strong>promo-es-pro</strong> →
-            Settings → Environment Variables, adicione:
-          </p>
-          <ul>
-            <li>
-              <code>NEXT_PUBLIC_SUPABASE_URL</code> ={" "}
-              <code>https://xtgnqttklwsyecrutmut.supabase.co</code>
-            </li>
-            <li>
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> = chave anon do projeto
-              Promoções
-            </li>
-          </ul>
-          <p>Marque Production, Preview e Development. Depois faça <strong>Redeploy</strong>.</p>
-        </div>
-      </main>
-    );
+async function buscarPromocoes(): Promise<Promocao[]> {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("promocoes")
+    .select("*")
+    .eq("aprovada", true)
+    .order("criada_em", { ascending: false })
+    .limit(120);
+
+  if (error) {
+    console.error("[promocoes] erro ao buscar:", error.message);
+    return [];
   }
+  return (data ?? []) as Promocao[];
+}
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.getSession();
-
-  const conectado = !error;
-  const sessao = data.session ? "ativa" : "nenhuma (normal antes do login)";
+export default async function HomePage() {
+  const promocoes = await buscarPromocoes();
 
   return (
-    <main>
-      <h1>PromoçõesPro</h1>
-      <p>Gestão de promoções — projeto conectado ao Supabase.</p>
+    <main className="mx-auto min-h-dvh max-w-7xl px-4 pb-16 pt-6 md:px-6 md:pt-10">
+      <header className="mb-6 md:mb-8">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-xl font-black text-white shadow-lg">
+            P
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold tracking-tight text-zinc-900 md:text-2xl">
+              PromoçãoPro
+            </h1>
+            <p className="text-xs text-zinc-500 md:text-sm">
+              Ofertas reais do Mercado Livre, curadas por IA.
+            </p>
+          </div>
+        </div>
+      </header>
 
-      <div className="card">
+      <PromocoesList promocoesIniciais={promocoes} />
+
+      <footer className="mt-16 border-t border-zinc-200/70 pt-6 text-center text-xs text-zinc-400">
         <p>
-          <strong>Supabase:</strong>{" "}
-          <span className={conectado ? "ok" : "err"}>
-            {conectado ? "conectado" : "erro"}
-          </span>
+          Os preços e a disponibilidade podem mudar a qualquer momento. Confira
+          no site antes de comprar.
         </p>
-        {error && <p className="err">{error.message}</p>}
-        <p>
-          <strong>Sessão:</strong> {sessao}
+        <p className="mt-1">
+          Os links levam ao Mercado Livre e podem gerar comissão para o app.
         </p>
-        <p>
-          <strong>Projeto:</strong>{" "}
-          <code>xtgnqttklwsyecrutmut</code> (Promoções, sa-east-1)
-        </p>
-      </div>
+      </footer>
     </main>
   );
 }

@@ -1,92 +1,92 @@
-# PromoçõesPro
+# PromoçãoPro
 
-Projeto novo, separado do antigo **Sistema de Cobrança** (`C:\cobranca sistema 2026`).
+Aplicativo de curadoria automatizada de promoções do Mercado Livre, filtradas
+por IA (Claude Haiku) e exibidas em uma interface web com atualização em
+tempo real via Supabase.
 
-## Supabase
+## Arquitetura
 
-| Campo | Valor |
-|--------|--------|
-| Nome no dashboard | **Promoções** |
-| Região | `sa-east-1` |
-| Project ref | `xtgnqttklwsyecrutmut` |
-| URL da API | `https://xtgnqttklwsyecrutmut.supabase.co` |
+```
+┌──────────────────┐    a cada 30 min    ┌─────────────────┐
+│ Mercado Livre API│ ──────────────────▶ │  scraper (Py)   │
+└──────────────────┘                     └────────┬────────┘
+                                                  │ filtra desc>=30% e ★>=4
+                                                  ▼
+                                         ┌─────────────────┐
+                                         │  Claude Haiku   │ (curadoria + reescrita)
+                                         └────────┬────────┘
+                                                  │ aprovada=true
+                                                  ▼
+                                         ┌─────────────────┐
+                                         │   Supabase DB   │ (Realtime)
+                                         └────────┬────────┘
+                                                  │ subscribe
+                                                  ▼
+                                         ┌─────────────────┐
+                                         │  Next.js (Web)  │
+                                         └─────────────────┘
+```
 
-O banco `public` ainda está vazio — próximo passo: criar tabelas/migrations.
+## Estrutura do repositório
 
-## App web (Next.js)
+```
+promoçõesPro/
+├── app/                    ← Next.js App Router (front-end)
+├── components/
+├── lib/
+├── public/
+├── scraper/                ← Python: busca + curadoria + persistência
+│   ├── main.py
+│   ├── mercado_livre.py
+│   ├── claude_curator.py
+│   ├── supabase_repo.py
+│   ├── config.py
+│   ├── requirements.txt
+│   └── .env.example
+├── .github/workflows/      ← cron do scraper a cada 30 min
+├── package.json
+├── tsconfig.json
+└── next.config.ts
+```
+
+## Como rodar o scraper localmente
+
+```bash
+cd scraper
+python -m venv .venv
+.venv\Scripts\activate         # Windows PowerShell
+pip install -r requirements.txt
+copy .env.example .env          # preencha MELI_CLIENT_SECRET, etc.
+python main.py --once           # execução única
+python main.py                  # loop infinito a cada 30 min
+```
+
+## Status das etapas
+
+- [x] **Etapa 1** — Tabela `promocoes` no Supabase (com RLS + Realtime)
+- [x] **Etapa 2** — Scraper Python: busca ofertas no Mercado Livre
+- [x] **Etapa 3** — Filtro com Claude Haiku + persistência no Supabase
+- [x] **Etapa 4** — Front-end Next.js com Realtime
+- [x] **Etapa 5** — Deploy no Vercel + cron do GitHub Actions (veja [`DEPLOY.md`](./DEPLOY.md))
+
+## Como rodar o front-end localmente
 
 ```bash
 npm install
 npm run dev
+# abra http://localhost:3000
 ```
 
-Abra http://localhost:3000 — a página confirma a conexão com o Supabase.
+O `.env.local` na raiz já está preenchido com `NEXT_PUBLIC_SUPABASE_URL` e a publishable key.
 
-## Configuração local
+## Variáveis de ambiente do scraper (.env)
 
-1. Copie as variáveis (se ainda não tiver `.env`):
-
-   ```powershell
-   copy .env.example .env
-   ```
-
-2. Instale e teste:
-
-   ```bash
-   npm install
-   npm run test:supabase
-   npm run build
-   ```
-
-## Deploy na Vercel
-
-1. Importe **https://github.com/samu-svg/promo-esPro**
-2. Em **Environment Variables**, adicione:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-3. Deploy — framework detectado: **Next.js**
-
-3. (Opcional) CLI Supabase para migrations:
-
-   ```bash
-   npx supabase login
-   npx supabase link --project-ref xtgnqttklwsyecrutmut
-   ```
-
-## Uso no código
-
-```ts
-import { supabase } from "./lib/supabase.js";
-// ou, em scripts Node: import "dotenv/config" antes
-```
-
-Chaves ficam só em `.env` (não commitar). Use a chave **publishable** (`sb_publishable_...`) em apps novos quando migrar do anon legado.
-
-## GitHub
-
-O repositório local já tem o commit inicial. Para publicar:
-
-1. Entre na conta **samu-svg** no GitHub CLI:
-
-   ```powershell
-   gh auth login -h github.com -p https -w
-   ```
-
-   Abra https://github.com/login/device, cole o código de 8 caracteres e autorize como **samu-svg**.
-
-2. Publique o repositório:
-
-   ```powershell
-   Set-Location -LiteralPath 'C:\promoçõesPro'
-   .\scripts\publish-github.ps1
-   ```
-
-   Repositório: **https://github.com/samu-svg/promo-esPro**
-
-**Sincronizar (URL já definida):**
-
-   ```powershell
-   Set-Location -LiteralPath 'C:\promoçõesPro'
-   .\scripts\sync-github.ps1 -RepoUrl https://github.com/samu-svg/promo-esPro.git
-   git push -u origin master
-   ```
+| Variável | Onde pegar |
+|---|---|
+| `MELI_CLIENT_ID` | Painel Mercado Livre Developers → suas credenciais |
+| `MELI_CLIENT_SECRET` | Painel Mercado Livre Developers → suas credenciais |
+| `MELI_AFFILIATE_ID` | seu user no programa Afiliados Brasil (ex: `andeciofmendes`) |
+| `SUPABASE_URL` | Supabase → Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → `service_role` (segredo!) |
+| `ANTHROPIC_API_KEY` | Anthropic Console → API Keys |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5` (padrão) |

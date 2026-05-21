@@ -1,0 +1,61 @@
+name: scraper-promocoes
+
+# Roda o scraper Python a cada 30 minutos via cron do GitHub Actions.
+# Também pode ser disparado manualmente em Actions → "Run workflow".
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+# Evita execuções sobrepostas (uma rodada nunca termina antes da próxima começar).
+concurrency:
+  group: scraper-promocoes
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Curar promoções
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: scraper
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper (single pass)
+        env:
+          # --- Mercado Livre ---
+          MELI_CLIENT_ID: ${{ secrets.MELI_CLIENT_ID }}
+          MELI_CLIENT_SECRET: ${{ secrets.MELI_CLIENT_SECRET }}
+          MELI_AFFILIATE_ID: ${{ secrets.MELI_AFFILIATE_ID }}
+          MELI_SITE_ID: MLB
+
+          # --- Filtros ---
+          MIN_DISCOUNT_PERCENT: "30"
+          MIN_RATING: "4.0"
+          MAX_ITEMS_PER_CATEGORY: "50"
+
+          # --- Supabase ---
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+          # --- Claude ---
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: claude-haiku-4-5
+        run: python main.py --once

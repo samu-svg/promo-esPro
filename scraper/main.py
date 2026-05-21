@@ -1,0 +1,182 @@
+"""Entry-point do scraper PromoçãoPro (Etapa 3 — pipeline completo).
+
+Fluxo de cada execução:
+1. Busca promoções no Mercado Livre (desconto>=30%, rating>=4 estrelas).
+2. Filtra as que já estão no Supabase (dedup por `external_id`).
+3. Envia cada nova promoção para o Claude Haiku.
+4. Salva no Supabase as que a IA aprovou, com `titulo` e `descricao` reescritos.
+
+Modos:
+    python main.py            # loop infinito a cada SCRAPER_INTERVAL_MINUTES
+    python main.py --once     # uma única execução (use no GitHub Actions cron)
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import time
+
+from claude_curator import ClaudeCurator
+from config import Settings, load_settings
+from mercado_livre import MercadoLivreClient, Promocao
+from supabase_repo import PromocoesRepo
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("promocaopro.scraper")
+
+
+# Pequena pausa entre chamadas do Claude para sermos amigáveis com rate limits.
+CLAUDE_THROTTLE_SECONDS = 0.4
+
+
+def _validate_settings_for_pipeline(settings: Settings) -> None:
+    missing: list[str] = []
+    if not settings.supabase_url:
+        missing.append("SUPABASE_URL")
+    if not settings.supabase_service_role_key:
+        missing.append("SUPABASE_SERVICE_ROLE_KEY")
+    if not settings.anthropic_api_key:
+        missing.append("ANTHROPIC_API_KEY")
+    if missing:
+        raise RuntimeError(
+            "Variáveis obrigatórias para a Etapa 3 ausentes: "
+            + ", ".join(missing)
+            + ". Preencha-as no .env antes de rodar o pipeline."
+        )
+
+
+def run_once() -> dict[str, int]:
+    """Executa uma varredura completa e devolve estatísticas."""
+    settings = load_settings()
+    _validate_settings_for_pipeline(settings)
+
+    meli = MercadoLivreClient(
+        client_id=settings.meli_client_id,
+        client_secret=settings.meli_client_secret,
+        affiliate_id=settings.meli_affiliate_id,
+        site_id=settings.meli_site_id,
+    )
+    repo = PromocoesRepo(
+        url=settings.supabase_url,  # type: ignore[arg-type]
+        service_role_key=settings.supabase_service_role_key,  # type: ignore[arg-type]
+    )
+    curator = ClaudeCurator(
+        api_key=settings.anthropic_api_key,  # type: ignore[arg-type]
+        model=settings.anthropic_model,
+    )
+
+    # 1. Busca promoções no Mercado Livre
+    promocoes = meli.fetch_promotions(
+        min_discount_percent=settings.min_discount_percent,
+        min_rating=settings.min_rating,
+        max_items_per_category=settings.max_items_per_category,
+    )
+
+    if not promocoes:
+        logger.info("Nenhuma promoção encontrada nesta varredura.")
+        return {"fetched": 0, "novos": 0, "aprovados": 0, "rejeitados": 0}
+
+    # 2. Dedup: tira do baralho o que já está salvo
+    ja_existentes = repo.existing_external_ids(
+        [p.external_id for p in promocoes]
+    )
+    novos = [p for p in promocoes if p.external_id not in ja_existentes]
+    logger.info(
+        "%d promoções encontradas | %d já no banco | %d serão avaliadas pela IA.",
+        len(promocoes),
+        len(ja_existentes),
+        len(novos),
+    )
+
+    # 3 + 4. Curadoria com Claude Haiku → upsert dos aprovados
+    aprovados = 0
+    rejeitados = 0
+    for promo in novos:
+        decision = curator.curate(promo)
+        if not decision.aprovada or not decision.titulo:
+            rejeitados += 1
+            logger.info(
+                "Rejeitado pelo Claude: [%s] %s",
+                promo.external_id,
+                _truncate(promo.titulo, 60),
+            )
+            time.sleep(CLAUDE_THROTTLE_SECONDS)
+            continue
+
+        try:
+            repo.upsert_approved(
+                promo,
+                titulo=decision.titulo,
+                descricao=decision.descricao,
+            )
+            aprovados += 1
+        except Exception:
+            logger.exception(
+                "Falha ao gravar promoção %s no Supabase.", promo.external_id
+            )
+        time.sleep(CLAUDE_THROTTLE_SECONDS)
+
+    stats = {
+        "fetched": len(promocoes),
+        "novos": len(novos),
+        "aprovados": aprovados,
+        "rejeitados": rejeitados,
+    }
+    logger.info("=" * 70)
+    logger.info(
+        "Resumo: encontradas=%d | novas=%d | aprovadas=%d | rejeitadas=%d",
+        stats["fetched"],
+        stats["novos"],
+        stats["aprovados"],
+        stats["rejeitados"],
+    )
+    logger.info("=" * 70)
+    return stats
+
+
+def _truncate(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="PromoçãoPro scraper")
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Roda uma única vez e sai (usado pelo cron do GitHub Actions).",
+    )
+    args = parser.parse_args()
+
+    settings = load_settings()
+
+    if args.once:
+        run_once()
+        return
+
+    interval_seconds = settings.scraper_interval_minutes * 60
+    logger.info(
+        "Modo loop: rodando a cada %d minutos. Ctrl+C para parar.",
+        settings.scraper_interval_minutes,
+    )
+
+    while True:
+        try:
+            run_once()
+        except Exception:
+            logger.exception("Erro na execução — seguindo o loop.")
+        logger.info(
+            "Próxima execução em %d minutos.", settings.scraper_interval_minutes
+        )
+        time.sleep(interval_seconds)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Encerrado pelo usuário.")
+        sys.exit(0)
