@@ -1,23 +1,48 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+function readEnv(name: string): string | null {
+  const raw = process.env[name];
+  if (!raw) return null;
+  // Limpa whitespace, aspas externas (paste acidental) e barra final.
+  return raw.trim().replace(/^['"]|['"]$/g, "").replace(/\/$/, "") || null;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Cliente Supabase para Server Components / Route Handlers.
  *
- * Retorna `null` se as env vars não estiverem definidas, em vez de lançar
- * exceção — isso permite que o build prossiga em ambientes ainda sem
- * configuração (ex: primeiro deploy na Vercel antes de cadastrar
- * `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+ * Devolve `null` em vez de lançar quando as env vars estão ausentes ou
+ * inválidas — assim a página degrada graciosamente em vez de retornar 500.
  */
 export function createSupabaseServerClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = readEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+
   if (!url || !key) {
     console.warn(
-      "[supabase/server] NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY ausentes — retornando null.",
+      "[supabase/server] NEXT_PUBLIC_SUPABASE_URL/ANON_KEY ausentes.",
     );
     return null;
   }
-  return createClient(url, key, {
-    auth: { persistSession: false },
-  });
+  if (!isValidHttpUrl(url)) {
+    console.error(
+      `[supabase/server] NEXT_PUBLIC_SUPABASE_URL inválida: ${JSON.stringify(url)} (tamanho=${url.length})`,
+    );
+    return null;
+  }
+
+  try {
+    return createClient(url, key, { auth: { persistSession: false } });
+  } catch (err) {
+    console.error("[supabase/server] createClient falhou:", err);
+    return null;
+  }
 }
