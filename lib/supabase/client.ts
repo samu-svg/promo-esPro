@@ -9,6 +9,10 @@ function readEnv(value: string | undefined): string | null {
   return value.trim().replace(/^['"]|['"]$/g, "").replace(/\/$/, "") || null;
 }
 
+function normalizeUrl(value: string): string {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
 function isValidHttpUrl(value: string): boolean {
   try {
     const u = new URL(value);
@@ -26,15 +30,16 @@ function isValidHttpUrl(value: string): boolean {
  */
 export function getSupabaseBrowserClient(): SupabaseClient | null {
   if (_client) return _client;
-  const url = readEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const rawUrl = readEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const key = readEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-  if (!url || !key) {
+  if (!rawUrl || !key) {
     console.warn("[supabase/client] env vars ausentes — Realtime off.");
     return null;
   }
+  const url = normalizeUrl(rawUrl);
   if (!isValidHttpUrl(url)) {
-    console.error(`[supabase/client] URL inválida: ${url}`);
+    console.error(`[supabase/client] URL inválida após sanitização: ${url}`);
     return null;
   }
 
