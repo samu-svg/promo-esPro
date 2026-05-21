@@ -43,3 +43,24 @@ import { supabase } from "./lib/supabase.js";
 ```
 
 Chaves ficam só em `.env` (não commitar). Use a chave **publishable** (`sb_publishable_...`) em apps novos quando migrar do anon legado.
+
+## GitHub
+
+O repositório local já tem o commit inicial. Para publicar:
+
+1. Instale/autentique o GitHub CLI (se ainda não fez):
+
+   ```powershell
+   gh auth login -h github.com -p https -w
+   ```
+
+   Abra o link que aparecer, cole o código e autorize.
+
+2. Crie o repositório remoto e envie o código:
+
+   ```powershell
+   Set-Location -LiteralPath 'C:\promoçõesPro'
+   .\scripts\publish-github.ps1
+   ```
+
+   Isso cria **`promocoes-pro`** (público) na sua conta e faz o `push`.
