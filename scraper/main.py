@@ -5,6 +5,8 @@ Fluxo de cada execução:
 2. Filtra as que já estão no Supabase (dedup por `external_id`).
 3. Envia cada nova promoção para o Claude Haiku.
 4. Salva no Supabase as que a IA aprovou, com `titulo` e `descricao` reescritos.
+5. Atualiza preços das promoções que ainda aparecem na fonte.
+6. Apaga promoções que não foram vistas há STALE_PROMO_HOURS horas.
 
 Modos:
     python main.py            # loop infinito a cada SCRAPER_INTERVAL_MINUTES
@@ -49,6 +51,22 @@ def _validate_settings_for_pipeline(settings: Settings) -> None:
         )
 
 
+def _sync_existing_prices(repo: PromocoesRepo, promocoes: list[Promocao], ja_existentes: set[str]) -> int:
+    """Atualiza preços e marca `ultima_vista_em` das promoções já salvas."""
+    atualizadas = 0
+    for promo in promocoes:
+        if promo.external_id not in ja_existentes:
+            continue
+        try:
+            repo.update_prices(promo)
+            atualizadas += 1
+        except Exception:
+            logger.exception(
+                "Falha ao atualizar preços da promoção %s.", promo.external_id
+            )
+    return atualizadas
+
+
 def run_once() -> dict[str, int]:
     """Executa uma varredura completa e devolve estatísticas."""
     settings = load_settings()
@@ -69,16 +87,28 @@ def run_once() -> dict[str, int]:
         model=settings.anthropic_model,
     )
 
+    stats = {
+        "fetched": 0,
+        "novos": 0,
+        "aprovados": 0,
+        "rejeitados": 0,
+        "atualizadas": 0,
+        "removidas": 0,
+    }
+
     # 1. Busca promoções no Mercado Livre
     promocoes = meli.fetch_promotions(
         min_discount_percent=settings.min_discount_percent,
         min_rating=settings.min_rating,
         max_items_per_category=settings.max_items_per_category,
     )
+    stats["fetched"] = len(promocoes)
 
     if not promocoes:
-        logger.info("Nenhuma promoção encontrada nesta varredura.")
-        return {"fetched": 0, "novos": 0, "aprovados": 0, "rejeitados": 0}
+        logger.info(
+            "Nenhuma promoção encontrada nesta varredura — limpeza ignorada."
+        )
+        return stats
 
     # 2. Dedup: tira do baralho o que já está salvo
     ja_existentes = repo.existing_external_ids(
@@ -92,13 +122,17 @@ def run_once() -> dict[str, int]:
         len(novos),
     )
 
-    # 3 + 4. Curadoria com Claude Haiku → upsert dos aprovados
-    aprovados = 0
-    rejeitados = 0
+    # 3. Atualiza preços das que ainda aparecem na fonte
+    stats["atualizadas"] = _sync_existing_prices(repo, promocoes, ja_existentes)
+    if stats["atualizadas"]:
+        logger.info("%d promoções existentes tiveram preços atualizados.", stats["atualizadas"])
+
+    # 4 + 5. Curadoria com Claude Haiku → upsert dos aprovados
+    stats["novos"] = len(novos)
     for promo in novos:
         decision = curator.curate(promo)
         if not decision.aprovada or not decision.titulo:
-            rejeitados += 1
+            stats["rejeitados"] += 1
             logger.info(
                 "Rejeitado pelo Claude: [%s] %s",
                 promo.external_id,
@@ -113,26 +147,29 @@ def run_once() -> dict[str, int]:
                 titulo=decision.titulo,
                 descricao=decision.descricao,
             )
-            aprovados += 1
+            stats["aprovados"] += 1
         except Exception:
             logger.exception(
                 "Falha ao gravar promoção %s no Supabase.", promo.external_id
             )
         time.sleep(CLAUDE_THROTTLE_SECONDS)
 
-    stats = {
-        "fetched": len(promocoes),
-        "novos": len(novos),
-        "aprovados": aprovados,
-        "rejeitados": rejeitados,
-    }
+    # 6. Apaga promoções que não aparecem na fonte há algumas horas
+    try:
+        stats["removidas"] = repo.delete_stale(settings.stale_promo_hours)
+    except Exception:
+        logger.exception("Falha ao remover promoções obsoletas.")
+
     logger.info("=" * 70)
     logger.info(
-        "Resumo: encontradas=%d | novas=%d | aprovadas=%d | rejeitadas=%d",
+        "Resumo: encontradas=%d | novas=%d | aprovadas=%d | rejeitadas=%d | "
+        "atualizadas=%d | removidas=%d",
         stats["fetched"],
         stats["novos"],
         stats["aprovados"],
         stats["rejeitados"],
+        stats["atualizadas"],
+        stats["removidas"],
     )
     logger.info("=" * 70)
     return stats

@@ -50,6 +50,7 @@ jobs:
           MIN_DISCOUNT_PERCENT: "30"
           MIN_RATING: "4.0"
           MAX_ITEMS_PER_CATEGORY: "50"
+          STALE_PROMO_HOURS: "2"
 
           # --- Supabase ---
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

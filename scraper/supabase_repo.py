@@ -6,6 +6,7 @@ bypassa a RLS e permite inserir/atualizar livremente.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from supabase import create_client, Client
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 def _chunks(items: list[str], size: int) -> Iterable[list[str]]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class PromocoesRepo:
@@ -47,7 +52,7 @@ class PromocoesRepo:
         return found
 
     # ------------------------------------------------------------------
-    # Insert
+    # Insert / update
     # ------------------------------------------------------------------
     def upsert_approved(
         self,
@@ -68,6 +73,7 @@ class PromocoesRepo:
             "categoria": promo.categoria,
             "avaliacao": promo.avaliacao,
             "aprovada": True,
+            "ultima_vista_em": _utc_now_iso(),
         }
         (
             self.client.table(self.TABLE)
@@ -75,3 +81,66 @@ class PromocoesRepo:
             .execute()
         )
         logger.info("Salvo no Supabase: %s — %s", promo.external_id, titulo)
+
+    def update_prices(self, promo: Promocao) -> None:
+        """Atualiza preços de uma promoção já existente (sem passar pela IA)."""
+        row = {
+            "preco_original": promo.preco_original,
+            "preco_desconto": promo.preco_desconto,
+            "percentual_desconto": promo.percentual_desconto,
+            "avaliacao": promo.avaliacao,
+            "ultima_vista_em": _utc_now_iso(),
+        }
+        (
+            self.client.table(self.TABLE)
+            .update(row)
+            .eq("external_id", promo.external_id)
+            .execute()
+        )
+
+    # ------------------------------------------------------------------
+    # Limpeza
+    # ------------------------------------------------------------------
+    def delete_stale(self, max_age_hours: float) -> int:
+        """Apaga promoções que não foram vistas há mais de `max_age_hours`."""
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        ).isoformat()
+
+        stale_ids: list[str] = []
+        offset = 0
+        page_size = 1000
+        while True:
+            resp = (
+                self.client.table(self.TABLE)
+                .select("external_id")
+                .eq("aprovada", True)
+                .not_.is_("external_id", "null")
+                .lt("ultima_vista_em", cutoff)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            rows = resp.data or []
+            stale_ids.extend(row["external_id"] for row in rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+
+        return self.delete_by_external_ids(stale_ids)
+
+    def delete_by_external_ids(self, ids: list[str]) -> int:
+        """Remove promoções pelo `external_id`."""
+        if not ids:
+            return 0
+        removed = 0
+        for chunk in _chunks(ids, 200):
+            (
+                self.client.table(self.TABLE)
+                .delete()
+                .in_("external_id", chunk)
+                .execute()
+            )
+            removed += len(chunk)
+        if removed:
+            logger.info("Removidas %d promoções obsoletas.", removed)
+        return removed
