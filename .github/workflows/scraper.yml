@@ -52,6 +52,7 @@ jobs:
           MAX_ITEMS_PER_CATEGORY: "50"
           STALE_PROMO_HOURS: "168"
           FAST_SYNC: "true"
+          AI_CLASSIFY: "true"
 
           # --- Supabase ---
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -3,8 +3,8 @@
 Fluxo de cada execução:
 1. Busca promoções no Mercado Livre (desconto>=30%, rating>=4 estrelas).
 2. Filtra as que já estão no Supabase (dedup por `external_id`).
-3. Envia cada nova promoção para a IA (OpenAI ou Claude, conforme CURATOR_PROVIDER).
-4. Salva no Supabase as que a IA aprovou, com `titulo`, `descricao` e `categoria`.
+3. Novos itens: curadoria completa (FAST_SYNC=false) ou título ML + categoria via IA (FAST_SYNC=true).
+4. Salva no Supabase as aprovadas, com `titulo`, `descricao` e `categoria`.
 5. Atualiza preços das promoções que ainda aparecem na fonte.
 6. Apaga promoções que não foram vistas há STALE_PROMO_HOURS horas.
 
@@ -23,6 +23,7 @@ import time
 from categorias import normalizar_categoria
 from config import Settings, load_settings
 from curator_factory import create_curator, resolve_provider, validate_curator_settings
+from curator_types import CuratorProtocol
 from mercado_livre import MercadoLivreClient, Promocao
 from supabase_repo import PromocoesRepo
 
@@ -48,8 +49,41 @@ def _validate_settings_for_pipeline(settings: Settings, provider: str) -> None:
             + ", ".join(missing)
             + ". Preencha-as no .env antes de rodar o pipeline."
         )
-    if not settings.fast_sync:
+    if not settings.fast_sync or settings.ai_classify:
         validate_curator_settings(settings, provider)
+
+
+def _resolve_categoria(
+    curator: CuratorProtocol | None,
+    promo: Promocao,
+    *,
+    use_ai: bool,
+) -> str | None:
+    """Resolve categoria: IA (prompt leve) com fallback no mapa ML → app."""
+    map_categoria = normalizar_categoria(promo.categoria)
+    if not use_ai or curator is None:
+        return map_categoria
+
+    ia_categoria = curator.classify_category(promo.titulo, map_categoria)
+    time.sleep(AI_THROTTLE_SECONDS)
+    if ia_categoria:
+        if map_categoria and ia_categoria != map_categoria:
+            logger.info(
+                "Categoria IA [%s]: %s → %s",
+                promo.external_id,
+                map_categoria,
+                ia_categoria,
+            )
+        return ia_categoria
+
+    if map_categoria:
+        logger.warning(
+            "IA sem categoria, fallback mapa ML [%s]: %s",
+            promo.external_id,
+            map_categoria,
+        )
+        return map_categoria
+    return None
 
 
 def _sync_existing_prices(repo: PromocoesRepo, promocoes: list[Promocao], ja_existentes: set[str]) -> int:
@@ -84,11 +118,23 @@ def run_once(provider: str | None = None) -> dict[str, int]:
         url=settings.supabase_url,  # type: ignore[arg-type]
         service_role_key=settings.supabase_service_role_key,  # type: ignore[arg-type]
     )
-    curator = None if settings.fast_sync else create_curator(settings, provider=resolved_provider)
+    use_ai_classify = settings.fast_sync and settings.ai_classify
     if settings.fast_sync:
-        logger.info("Modo FAST_SYNC: novos itens entram sem IA (filtros ML apenas).")
+        curator = (
+            create_curator(settings, provider=resolved_provider)
+            if settings.ai_classify
+            else None
+        )
+        if settings.ai_classify:
+            logger.info(
+                "Modo FAST_SYNC + IA: título ML, categoria via %s.",
+                resolved_provider,
+            )
+        else:
+            logger.info("Modo FAST_SYNC: novos itens entram sem IA.")
     else:
-        logger.info("Curadoria via provider: %s", resolved_provider)
+        curator = create_curator(settings, provider=resolved_provider)
+        logger.info("Curadoria completa via provider: %s", resolved_provider)
 
     stats = {
         "fetched": 0,
@@ -117,7 +163,7 @@ def run_once(provider: str | None = None) -> dict[str, int]:
     )
     novos = [p for p in promocoes if p.external_id not in ja_existentes]
     logger.info(
-        "%d promoções encontradas | %d já no banco | %d serão avaliadas pela IA.",
+        "%d promoções encontradas | %d já no banco | %d novas.",
         len(promocoes),
         len(ja_existentes),
         len(novos),
@@ -130,7 +176,11 @@ def run_once(provider: str | None = None) -> dict[str, int]:
     stats["novos"] = len(novos)
     for promo in novos:
         if settings.fast_sync:
-            categoria = normalizar_categoria(promo.categoria)
+            categoria = _resolve_categoria(
+                curator,
+                promo,
+                use_ai=use_ai_classify,
+            )
             if not categoria:
                 stats["rejeitados"] += 1
                 logger.warning(

@@ -1,0 +1,51 @@
+name: reclassificar-categorias
+
+# Reclassifica categorias de todo o catálogo via IA (prompt leve).
+# Domingos às 06:00 UTC (~03:00 BRT). Também pode ser disparado manualmente.
+on:
+  schedule:
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: reclassificar-categorias
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Reclassificar categorias
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: scraper
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reclassificar categorias via IA
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CURATOR_PROVIDER: openai
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4o-mini
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: claude-haiku-4-5
+          MELI_CLIENT_ID: ${{ secrets.MELI_CLIENT_ID }}
+          MELI_CLIENT_SECRET: ${{ secrets.MELI_CLIENT_SECRET }}
+        run: python reclassificar_categorias.py
