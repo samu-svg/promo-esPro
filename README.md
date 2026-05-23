@@ -27,27 +27,60 @@ tempo real via Supabase.
                                          └─────────────────┘
 ```
 
+## Rotas do site (Next.js)
+
+| Rota | Descrição |
+|------|-----------|
+| `/` | Feed de promoções, busca inteligente, filtros e banner em destaque |
+| `/salvos` | Favoritos persistidos no navegador (`localStorage`) |
+| `/alertas` | Alertas de preço locais + toast in-app via Realtime |
+
+## Funcionalidades web
+
+- **Realtime** — lista atualiza ao vivo (INSERT/UPDATE/DELETE no Supabase)
+- **Busca inteligente** — sinônimos + RPC `buscar_promocoes` + fallback `ilike`
+- **Filtros avançados** — categoria, frete grátis, faixa de preço, desconto mínimo, ordenação
+- **Favoritos** — coração nos cards, sincronização de preços via Realtime
+- **Compartilhar** — WhatsApp, copiar link, Web Share API
+- **Alertas** — critérios por termo/preço/desconto; toast quando houver match (aba aberta)
+
+O app mobile Expo (`promocaopro-mobile`) consome o mesmo Supabase; o web não usa push nativo.
+
 ## Estrutura do repositório
 
 ```
 promoçõesPro/
-├── app/                    ← Next.js App Router (front-end)
+├── app/                    ← Next.js App Router
+│   ├── page.tsx            ← home
+│   ├── salvos/
+│   └── alertas/
 ├── components/
+├── hooks/
+├── store/                  ← zustand (salvos, alertas, toasts)
 ├── lib/
-├── public/
+├── supabase/migrations/
 ├── scraper/                ← Python: busca + curadoria + persistência
-│   ├── main.py
-│   ├── mercado_livre.py
-│   ├── claude_curator.py
-│   ├── supabase_repo.py
-│   ├── config.py
-│   ├── requirements.txt
-│   └── .env.example
 ├── .github/workflows/      ← cron do scraper a cada 30 min
 ├── package.json
-├── tsconfig.json
 └── next.config.ts
 ```
+
+## Como rodar o front-end localmente
+
+```bash
+npm install
+npm run dev
+# abra http://localhost:3000
+```
+
+### Variáveis de ambiente (`.env.local`)
+
+| Variável | Descrição |
+|----------|-----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave anon/public (nunca use `service_role` no front) |
+
+Copie de `.env.local.example` e preencha a anon key.
 
 ## Como rodar o scraper localmente
 
@@ -61,6 +94,11 @@ python main.py --once           # execução única
 python main.py                  # loop infinito a cada 30 min
 ```
 
+## Migrations Supabase relevantes
+
+- `20260521120000_add_ultima_vista_em_to_promocoes.sql`
+- `20260523120000_frete_expires_buscar_promocoes.sql` — colunas `frete_gratis`, `expires_at` e RPC de busca
+
 ## Status das etapas
 
 - [x] **Etapa 1** — Tabela `promocoes` no Supabase (com RLS + Realtime)
@@ -68,16 +106,7 @@ python main.py                  # loop infinito a cada 30 min
 - [x] **Etapa 3** — Filtro com Claude Haiku + persistência no Supabase
 - [x] **Etapa 4** — Front-end Next.js com Realtime
 - [x] **Etapa 5** — Deploy no Vercel + cron do GitHub Actions (veja [`DEPLOY.md`](./DEPLOY.md))
-
-## Como rodar o front-end localmente
-
-```bash
-npm install
-npm run dev
-# abra http://localhost:3000
-```
-
-O `.env.local` na raiz já está preenchido com `NEXT_PUBLIC_SUPABASE_URL` e a publishable key.
+- [x] **Etapa 6** — Paridade web/mobile: busca, filtros, salvos, alertas, compartilhar
 
 ## Variáveis de ambiente do scraper (.env)
 

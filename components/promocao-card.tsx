@@ -1,8 +1,11 @@
+"use client";
+
+import clsx from "clsx";
 import Image from "next/image";
 
+import { ShareButton } from "@/components/share-button";
+import { fmtBRL } from "@/lib/format";
 import type { Promocao } from "@/lib/types";
-
-const fmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 function StarRating({ rating }: { rating: number | null }) {
   if (rating == null) return null;
@@ -17,9 +20,35 @@ function StarRating({ rating }: { rating: number | null }) {
   );
 }
 
-export function PromocaoCard({ promo }: { promo: Promocao }) {
-  const economia = promo.preco_original - promo.preco_desconto;
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      className="h-3.5 w-3.5"
+      aria-hidden
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+    </svg>
+  );
+}
+
+type Props = {
+  promo: Promocao;
+  salvo?: boolean;
+  onToggleSalvo?: (promo: Promocao) => void;
+};
+
+export function PromocaoCard({ promo, salvo = false, onToggleSalvo }: Props) {
   const desconto = Math.round(promo.percentual_desconto);
+  const economia = promo.preco_original - promo.preco_desconto;
+
+  function handleToggleSalvo() {
+    onToggleSalvo?.(promo);
+  }
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-orange-400/40 hover:shadow-lg">
@@ -34,7 +63,7 @@ export function PromocaoCard({ promo }: { promo: Promocao }) {
             unoptimized
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-zinc-400 text-xs">
+          <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
             sem imagem
           </div>
         )}
@@ -58,13 +87,36 @@ export function PromocaoCard({ promo }: { promo: Promocao }) {
         )}
 
         <div className="mt-auto space-y-0.5">
-          <p className="text-xs text-zinc-400 line-through">{fmt.format(promo.preco_original)}</p>
+          <p className="text-xs text-zinc-400 line-through">{fmtBRL.format(promo.preco_original)}</p>
           <p className="text-2xl font-extrabold tracking-tight text-orange-500">
-            {fmt.format(promo.preco_desconto)}
+            {fmtBRL.format(promo.preco_desconto)}
           </p>
-          <p className="text-xs font-medium text-green-600">
-            economize {fmt.format(economia)}
-          </p>
+          <p className="text-xs font-medium text-green-600">economize {fmtBRL.format(economia)}</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          {promo.frete_gratis ? (
+            <span className="text-xs font-medium text-green-600">Frete grátis</span>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-1">
+            <ShareButton promo={promo} />
+            <button
+              type="button"
+              onClick={handleToggleSalvo}
+              disabled={!onToggleSalvo}
+              className={clsx(
+                "flex min-h-6 min-w-6 items-center justify-center rounded-md p-1 transition-colors",
+                salvo ? "bg-orange-500 text-white" : "bg-orange-50 text-orange-500 hover:bg-orange-100",
+                !onToggleSalvo && "cursor-not-allowed opacity-50",
+              )}
+              aria-label={salvo ? "Remover dos salvos" : "Salvar promoção"}
+              aria-pressed={salvo}
+            >
+              <HeartIcon filled={salvo} />
+            </button>
+          </div>
         </div>
 
         <a

@@ -2,36 +2,9 @@
 
 import clsx from "clsx";
 
-import { CATEGORIA_TODAS } from "@/lib/types";
+import { CATEGORIA_TODAS, ICONES_CATEGORIA, TODAS_AS_CATEGORIAS } from "@/lib/types";
 
-export const TODAS_AS_CATEGORIAS = [
-  "Tecnologia",
-  "Roupas e Moda",
-  "Calçados",
-  "Casa e Decoração",
-  "Eletrodomésticos",
-  "Beleza",
-  "Esportes",
-  "Brinquedos",
-  "Alimentos",
-  "Livros",
-  "Automotivo",
-] as const;
-
-const ICONES: Record<string, string> = {
-  [CATEGORIA_TODAS]: "🏷️",
-  Tecnologia:         "💻",
-  "Roupas e Moda":    "👕",
-  Calçados:           "👟",
-  "Casa e Decoração": "🏠",
-  Eletrodomésticos:   "🔌",
-  Beleza:             "💄",
-  Esportes:           "⚽",
-  Brinquedos:         "🧸",
-  Alimentos:          "🍎",
-  Livros:             "📚",
-  Automotivo:         "🚗",
-};
+export { TODAS_AS_CATEGORIAS };
 
 type Props = {
   categorias: readonly string[];
@@ -68,7 +41,7 @@ export function CategoryFilter({
             )}
           >
             <span role="img" aria-label={cat} className="text-sm leading-none">
-              {ICONES[cat] ?? "🛍️"}
+              {ICONES_CATEGORIA[cat] ?? "🛍️"}
             </span>
             <span>{cat}</span>
             {qtd > 0 && (

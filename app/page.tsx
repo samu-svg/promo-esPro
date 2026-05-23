@@ -1,4 +1,5 @@
 import { BannerRotativo } from "@/components/banner-rotativo";
+import { BarraDeBusca } from "@/components/barra-de-busca";
 import { PromocoesList } from "@/components/promocoes-list";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Promocao } from "@/lib/types";
@@ -45,19 +46,10 @@ export default async function HomePage() {
         {/* Header */}
         <header className="mb-8 md:mb-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-orange-700 text-xl font-black text-white shadow-[0_0_20px_rgba(249,115,22,0.35)]">
-                <span>P</span>
-                <div className="absolute inset-0 rounded-2xl ring-1 ring-orange-400/30" />
-              </div>
-              <div>
-                <h1 className="text-xl font-extrabold tracking-tight text-zinc-900 md:text-2xl">
-                  PromoçãoPro
-                </h1>
-                <p className="text-xs text-zinc-500 md:text-sm">
-                  Ofertas reais do Mercado Livre, curadas por IA
-                </p>
-              </div>
+            <div>
+              <p className="text-xs text-zinc-500 md:text-sm">
+                Ofertas reais do Mercado Livre, curadas por IA
+              </p>
             </div>
 
             <div className="flex items-center gap-2 self-start rounded-xl border border-orange-500/20 bg-orange-50 px-4 py-2 sm:self-auto">
@@ -68,6 +60,8 @@ export default async function HomePage() {
               </span>
             </div>
           </div>
+
+          <BarraDeBusca />
         </header>
 
         {/* Banner rotativo com as 5 maiores promoções */}
