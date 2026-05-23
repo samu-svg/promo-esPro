@@ -14,6 +14,11 @@ CATEGORIAS_APP: frozenset[str] = frozenset({
     "Alimentos",
     "Livros",
     "Automotivo",
+    "Saúde",
+    "Pets",
+    "Papelaria",
+    "Bebês",
+    "Ferramentas",
 })
 
 MAPA_CATEGORIAS_ML: dict[str, str] = {
@@ -30,17 +35,17 @@ MAPA_CATEGORIAS_ML: dict[str, str] = {
     "Acessórios para Veículos": "Automotivo",
     "Agro": "Alimentos",
     "Alimentos e Bebidas": "Alimentos",
-    "Arte, Papelaria e Armarinho": "Casa e Decoração",
+    "Arte, Papelaria e Armarinho": "Papelaria",
     "Câmeras e Acessórios": "Tecnologia",
     "Eletrodomésticos": "Eletrodomésticos",
     "Festas e Lembrancinhas": "Casa e Decoração",
     "Instrumentos Musicais": "Tecnologia",
     "Construção": "Casa e Decoração",
-    "Ferramentas": "Automotivo",
+    "Ferramentas": "Ferramentas",
     "Joias e Relógios": "Roupas e Moda",
-    "Bebês": "Brinquedos",
-    "Pet Shop": "Alimentos",
-    "Saúde": "Alimentos",
+    "Bebês": "Bebês",
+    "Pet Shop": "Pets",
+    "Saúde": "Saúde",
     "Indústria e Comércio": "Casa e Decoração",
 }
 

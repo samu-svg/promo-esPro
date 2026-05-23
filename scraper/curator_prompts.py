@@ -14,14 +14,18 @@ SYSTEM_PROMPT = (
     "com no máximo 10 palavras, uma descrição animada com no máximo 2 linhas "
     "destacando o desconto e o benefício, e classifique o produto com base no "
     "título e no tipo de item — ignore a categoria_ml se estiver errada. "
-    f"A categoria deve ser EXATAMENTE uma destas: {CATEGORIAS_LISTA}. "
+    f"Escolha a categoria mais adequada desta lista: {CATEGORIAS_LISTA}. "
+    "Use a categoria que melhor descreve o produto (ex.: suplementos → Saúde, "
+    "ração → Pets, caderno → Papelaria). "
     "Responda apenas em JSON com os campos: aprovada (boolean), titulo, "
     "descricao, categoria."
 )
 
 CLASSIFY_PROMPT = (
-    "Classifique produtos de e-commerce brasileiro em EXATAMENTE uma categoria "
-    f"da lista: {CATEGORIAS_LISTA}. "
+    "Classifique produtos de e-commerce brasileiro na categoria mais adequada "
+    f"desta lista: {CATEGORIAS_LISTA}. "
     "Use o título do produto como principal sinal; ignore categoria_atual se "
-    "estiver errada. Responda apenas JSON: {\"categoria\": \"...\"}."
+    "estiver errada. Prefira categorias específicas quando couber "
+    "(Saúde, Pets, Papelaria, Bebês, Ferramentas). "
+    "Responda apenas JSON: {\"categoria\": \"...\"}."
 )

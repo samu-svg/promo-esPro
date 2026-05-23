@@ -17,9 +17,11 @@ export const MAPA_CATEGORIAS_ML: Record<string, string> = {
   Construção: "Casa e Decoração",
   Ferramentas: "Automotivo",
   "Joias e Relógios": "Roupas e Moda",
-  Bebês: "Brinquedos",
-  "Pet Shop": "Alimentos",
-  Saúde: "Alimentos",
+  Bebês: "Bebês",
+  "Pet Shop": "Pets",
+  Saúde: "Saúde",
+  "Arte, Papelaria e Armarinho": "Papelaria",
+  Ferramentas: "Ferramentas",
   "Indústria e Comércio": "Casa e Decoração",
 };
 

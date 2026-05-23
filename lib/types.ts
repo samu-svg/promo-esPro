@@ -71,6 +71,11 @@ export const TODAS_AS_CATEGORIAS = [
   "Alimentos",
   "Livros",
   "Automotivo",
+  "Saúde",
+  "Pets",
+  "Papelaria",
+  "Bebês",
+  "Ferramentas",
 ] as const;
 
 export const ICONES_CATEGORIA: Record<string, string> = {
@@ -86,4 +91,9 @@ export const ICONES_CATEGORIA: Record<string, string> = {
   Alimentos: "🍎",
   Livros: "📚",
   Automotivo: "🚗",
+  Saúde: "💊",
+  Pets: "🐾",
+  Papelaria: "✏️",
+  Bebês: "👶",
+  Ferramentas: "🔧",
 };
