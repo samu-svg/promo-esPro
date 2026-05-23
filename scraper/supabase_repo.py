@@ -59,6 +59,7 @@ class PromocoesRepo:
         promo: Promocao,
         titulo: str,
         descricao: str | None,
+        categoria: str | None = None,
     ) -> None:
         """Insere (ou atualiza) uma promoção aprovada pelo curador."""
         row = {
@@ -70,7 +71,7 @@ class PromocoesRepo:
             "percentual_desconto": promo.percentual_desconto,
             "foto_url": promo.foto_url,
             "link_afiliado": promo.link_afiliado,
-            "categoria": promo.categoria,
+            "categoria": categoria or promo.categoria,
             "avaliacao": promo.avaliacao,
             "aprovada": True,
             "ultima_vista_em": _utc_now_iso(),
@@ -95,6 +96,36 @@ class PromocoesRepo:
             self.client.table(self.TABLE)
             .update(row)
             .eq("external_id", promo.external_id)
+            .execute()
+        )
+
+    def list_approved(self) -> list[dict]:
+        """Lista promoções aprovadas (id, titulo, categoria)."""
+        rows: list[dict] = []
+        offset = 0
+        page_size = 200
+        while True:
+            resp = (
+                self.client.table(self.TABLE)
+                .select("id, titulo, categoria")
+                .eq("aprovada", True)
+                .order("criada_em", desc=True)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            batch = resp.data or []
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return rows
+
+    def update_categoria(self, promo_id: str, categoria: str) -> None:
+        """Atualiza somente a categoria de uma promoção."""
+        (
+            self.client.table(self.TABLE)
+            .update({"categoria": categoria})
+            .eq("id", promo_id)
             .execute()
         )
 

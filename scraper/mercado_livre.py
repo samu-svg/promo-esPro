@@ -24,6 +24,8 @@ from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl, urljoin
 
 import requests
 
+from categorias import normalizar_categoria
+
 logger = logging.getLogger(__name__)
 
 _UA = (
@@ -250,9 +252,8 @@ class MercadoLivreClient:
                 cat_name, cat_id, len(items), len(aprovados),
             )
 
-            # atribuir categoria ao nome real
             for p in aprovados:
-                p.categoria = cat_name
+                p.categoria = normalizar_categoria(cat_name)
 
             promotions.extend(aprovados)
             # pausa curta entre categorias para não sobrecarregar

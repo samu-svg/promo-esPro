@@ -3,14 +3,15 @@
 Fluxo de cada execução:
 1. Busca promoções no Mercado Livre (desconto>=30%, rating>=4 estrelas).
 2. Filtra as que já estão no Supabase (dedup por `external_id`).
-3. Envia cada nova promoção para o Claude Haiku.
-4. Salva no Supabase as que a IA aprovou, com `titulo` e `descricao` reescritos.
+3. Envia cada nova promoção para a IA (OpenAI ou Claude, conforme CURATOR_PROVIDER).
+4. Salva no Supabase as que a IA aprovou, com `titulo`, `descricao` e `categoria`.
 5. Atualiza preços das promoções que ainda aparecem na fonte.
 6. Apaga promoções que não foram vistas há STALE_PROMO_HOURS horas.
 
 Modos:
     python main.py            # loop infinito a cada SCRAPER_INTERVAL_MINUTES
     python main.py --once     # uma única execução (use no GitHub Actions cron)
+    python main.py --once --provider anthropic  # força Claude Haiku
 """
 from __future__ import annotations
 
@@ -19,8 +20,8 @@ import logging
 import sys
 import time
 
-from claude_curator import ClaudeCurator
 from config import Settings, load_settings
+from curator_factory import create_curator, resolve_provider, validate_curator_settings
 from mercado_livre import MercadoLivreClient, Promocao
 from supabase_repo import PromocoesRepo
 
@@ -31,24 +32,22 @@ logging.basicConfig(
 logger = logging.getLogger("promocaopro.scraper")
 
 
-# Pequena pausa entre chamadas do Claude para sermos amigáveis com rate limits.
-CLAUDE_THROTTLE_SECONDS = 0.4
+AI_THROTTLE_SECONDS = 0.4
 
 
-def _validate_settings_for_pipeline(settings: Settings) -> None:
+def _validate_settings_for_pipeline(settings: Settings, provider: str) -> None:
     missing: list[str] = []
     if not settings.supabase_url:
         missing.append("SUPABASE_URL")
     if not settings.supabase_service_role_key:
         missing.append("SUPABASE_SERVICE_ROLE_KEY")
-    if not settings.anthropic_api_key:
-        missing.append("ANTHROPIC_API_KEY")
     if missing:
         raise RuntimeError(
             "Variáveis obrigatórias para a Etapa 3 ausentes: "
             + ", ".join(missing)
             + ". Preencha-as no .env antes de rodar o pipeline."
         )
+    validate_curator_settings(settings, provider)
 
 
 def _sync_existing_prices(repo: PromocoesRepo, promocoes: list[Promocao], ja_existentes: set[str]) -> int:
@@ -67,10 +66,11 @@ def _sync_existing_prices(repo: PromocoesRepo, promocoes: list[Promocao], ja_exi
     return atualizadas
 
 
-def run_once() -> dict[str, int]:
+def run_once(provider: str | None = None) -> dict[str, int]:
     """Executa uma varredura completa e devolve estatísticas."""
     settings = load_settings()
-    _validate_settings_for_pipeline(settings)
+    resolved_provider = resolve_provider(provider, settings)
+    _validate_settings_for_pipeline(settings, resolved_provider)
 
     meli = MercadoLivreClient(
         client_id=settings.meli_client_id,
@@ -82,10 +82,8 @@ def run_once() -> dict[str, int]:
         url=settings.supabase_url,  # type: ignore[arg-type]
         service_role_key=settings.supabase_service_role_key,  # type: ignore[arg-type]
     )
-    curator = ClaudeCurator(
-        api_key=settings.anthropic_api_key,  # type: ignore[arg-type]
-        model=settings.anthropic_model,
-    )
+    curator = create_curator(settings, provider=resolved_provider)
+    logger.info("Curadoria via provider: %s", resolved_provider)
 
     stats = {
         "fetched": 0,
@@ -96,7 +94,6 @@ def run_once() -> dict[str, int]:
         "removidas": 0,
     }
 
-    # 1. Busca promoções no Mercado Livre
     promocoes = meli.fetch_promotions(
         min_discount_percent=settings.min_discount_percent,
         min_rating=settings.min_rating,
@@ -110,7 +107,6 @@ def run_once() -> dict[str, int]:
         )
         return stats
 
-    # 2. Dedup: tira do baralho o que já está salvo
     ja_existentes = repo.existing_external_ids(
         [p.external_id for p in promocoes]
     )
@@ -122,23 +118,33 @@ def run_once() -> dict[str, int]:
         len(novos),
     )
 
-    # 3. Atualiza preços das que ainda aparecem na fonte
     stats["atualizadas"] = _sync_existing_prices(repo, promocoes, ja_existentes)
     if stats["atualizadas"]:
         logger.info("%d promoções existentes tiveram preços atualizados.", stats["atualizadas"])
 
-    # 4 + 5. Curadoria com Claude Haiku → upsert dos aprovados
     stats["novos"] = len(novos)
     for promo in novos:
         decision = curator.curate(promo)
         if not decision.aprovada or not decision.titulo:
             stats["rejeitados"] += 1
             logger.info(
-                "Rejeitado pelo Claude: [%s] %s",
+                "Rejeitado pela IA (%s): [%s] %s",
+                resolved_provider,
                 promo.external_id,
                 _truncate(promo.titulo, 60),
             )
-            time.sleep(CLAUDE_THROTTLE_SECONDS)
+            time.sleep(AI_THROTTLE_SECONDS)
+            continue
+
+        categoria = decision.categoria or promo.categoria
+        if not categoria:
+            stats["rejeitados"] += 1
+            logger.warning(
+                "Aprovado sem categoria válida, ignorado: [%s] %s",
+                promo.external_id,
+                _truncate(promo.titulo, 60),
+            )
+            time.sleep(AI_THROTTLE_SECONDS)
             continue
 
         try:
@@ -146,15 +152,15 @@ def run_once() -> dict[str, int]:
                 promo,
                 titulo=decision.titulo,
                 descricao=decision.descricao,
+                categoria=categoria,
             )
             stats["aprovados"] += 1
         except Exception:
             logger.exception(
                 "Falha ao gravar promoção %s no Supabase.", promo.external_id
             )
-        time.sleep(CLAUDE_THROTTLE_SECONDS)
+        time.sleep(AI_THROTTLE_SECONDS)
 
-    # 6. Apaga promoções que não aparecem na fonte há algumas horas
     try:
         stats["removidas"] = repo.delete_stale(settings.stale_promo_hours)
     except Exception:
@@ -186,12 +192,17 @@ def main() -> None:
         action="store_true",
         help="Roda uma única vez e sai (usado pelo cron do GitHub Actions).",
     )
+    parser.add_argument(
+        "--provider",
+        choices=["openai", "anthropic"],
+        help="Provider de IA (sobrescreve CURATOR_PROVIDER do .env).",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
 
     if args.once:
-        run_once()
+        run_once(provider=args.provider)
         return
 
     interval_seconds = settings.scraper_interval_minutes * 60
@@ -202,7 +213,7 @@ def main() -> None:
 
     while True:
         try:
-            run_once()
+            run_once(provider=args.provider)
         except Exception:
             logger.exception("Erro na execução — seguindo o loop.")
         logger.info(

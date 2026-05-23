@@ -1,15 +1,11 @@
-"""Curador de promoções baseado no Claude Haiku.
+"""Curador de promoções baseado no GPT-4o mini (OpenAI)."""
 
-Recebe uma `Promocao` (resultado da varredura no Mercado Livre) e devolve
-uma decisão `CuratorDecision` com `aprovada`, `titulo`, `descricao` e
-`categoria` gerados pela IA conforme o system prompt definido pelo produto.
-"""
 from __future__ import annotations
 
 import json
 import logging
 
-from anthropic import Anthropic, APIError
+from openai import APIError, OpenAI
 
 from curator_parsing import parse_categoria_only, parse_curator_response
 from curator_prompts import CLASSIFY_PROMPT, SYSTEM_PROMPT
@@ -18,18 +14,15 @@ from mercado_livre import Promocao
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ClaudeCurator", "CuratorDecision"]
 
+class OpenAICurator:
+    """Wrapper síncrono sobre a API OpenAI Chat Completions para curadoria."""
 
-class ClaudeCurator:
-    """Wrapper síncrono sobre a API Anthropic Messages para curadoria."""
-
-    def __init__(self, api_key: str, model: str = "claude-haiku-4-5") -> None:
-        self.client = Anthropic(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
+        self.client = OpenAI(api_key=api_key)
         self.model = model
 
     def curate(self, promo: Promocao) -> CuratorDecision:
-        """Envia uma promoção para o Claude Haiku e devolve a decisão."""
         payload = {
             "titulo_original": promo.titulo,
             "categoria_ml": promo.categoria,
@@ -44,22 +37,23 @@ class ClaudeCurator:
         )
 
         try:
-            response = self.client.messages.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=512,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_message}],
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
             )
         except APIError as exc:
-            logger.warning("Claude API falhou para %s: %s", promo.external_id, exc)
+            logger.warning("OpenAI API falhou para %s: %s", promo.external_id, exc)
             return CuratorDecision(False, None, None, None, raw_response=str(exc))
 
-        text_blocks = [b.text for b in response.content if getattr(b, "type", "") == "text"]
-        raw = "\n".join(text_blocks).strip()
-
-        decision = parse_curator_response(raw, provider="Claude")
+        raw = (response.choices[0].message.content or "").strip()
+        decision = parse_curator_response(raw, provider="OpenAI")
         logger.debug(
-            "Claude decidiu %s para %s (titulo=%r, categoria=%r)",
+            "OpenAI decidiu %s para %s (titulo=%r, categoria=%r)",
             decision.aprovada,
             promo.external_id,
             decision.titulo,
@@ -72,7 +66,6 @@ class ClaudeCurator:
         titulo: str,
         categoria_atual: str | None = None,
     ) -> str | None:
-        """Classifica um produto existente — prompt leve, só categoria."""
         payload = {
             "titulo": titulo,
             "categoria_atual": categoria_atual,
@@ -83,16 +76,18 @@ class ClaudeCurator:
         )
 
         try:
-            response = self.client.messages.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=64,
-                system=CLASSIFY_PROMPT,
-                messages=[{"role": "user", "content": user_message}],
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": CLASSIFY_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
             )
         except APIError as exc:
-            logger.warning("Claude classify falhou para %r: %s", titulo[:40], exc)
+            logger.warning("OpenAI classify falhou para %r: %s", titulo[:40], exc)
             return None
 
-        text_blocks = [b.text for b in response.content if getattr(b, "type", "") == "text"]
-        raw = "\n".join(text_blocks).strip()
-        return parse_categoria_only(raw, provider="Claude")
+        raw = (response.choices[0].message.content or "").strip()
+        return parse_categoria_only(raw, provider="OpenAI")

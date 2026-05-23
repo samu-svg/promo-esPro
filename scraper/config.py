@@ -55,7 +55,10 @@ class Settings:
     supabase_url: str | None
     supabase_service_role_key: str | None
 
-    # Claude (usado na Etapa 3)
+    # Curadoria IA (Etapa 3)
+    curator_provider: str
+    openai_api_key: str | None
+    openai_model: str
     anthropic_api_key: str | None
     anthropic_model: str
 
@@ -73,6 +76,9 @@ def load_settings() -> Settings:
         stale_promo_hours=_float("STALE_PROMO_HOURS", 2.0),
         supabase_url=os.getenv("SUPABASE_URL"),
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
+        curator_provider=os.getenv("CURATOR_PROVIDER", "openai"),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5"),
     )
