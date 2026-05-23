@@ -9,7 +9,7 @@ avaliações e foto sem autenticação.
 Vantagens:
 - Não depende de scopes OAuth para busca de produtos.
 - A página já filtra itens em promoção (todos têm desconto real).
-- Suporta filtro por categoria via query string `?filter=<cat_id>`.
+- Suporta filtro por categoria via query string `?category=<cat_id>`.
 - Retorna até 48 itens por página (padrão da página de ofertas ML).
 """
 from __future__ import annotations
@@ -176,7 +176,7 @@ class MercadoLivreClient:
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Retorna itens em promoção de uma categoria, já parseados."""
-        url = f"{_OFERTAS_URL}?filter={category_id}"
+        url = f"{_OFERTAS_URL}?category={category_id}"
         try:
             page = self._fetch_page_data(url)
         except MercadoLivreError as exc:
@@ -259,8 +259,15 @@ class MercadoLivreClient:
             # pausa curta entre categorias para não sobrecarregar
             time.sleep(1.5)
 
+        deduped: dict[str, Promocao] = {}
+        for promo in promotions:
+            atual = deduped.get(promo.external_id)
+            if atual is None or promo.percentual_desconto > atual.percentual_desconto:
+                deduped[promo.external_id] = promo
+        promotions = list(deduped.values())
+
         logger.info(
-            "Varredura concluída: %d promoções aprovadas pelos filtros básicos.",
+            "Varredura concluída: %d promoções únicas aprovadas pelos filtros básicos.",
             len(promotions),
         )
         return promotions

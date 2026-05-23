@@ -20,6 +20,7 @@ import logging
 import sys
 import time
 
+from categorias import normalizar_categoria
 from config import Settings, load_settings
 from curator_factory import create_curator, resolve_provider, validate_curator_settings
 from mercado_livre import MercadoLivreClient, Promocao
@@ -47,7 +48,8 @@ def _validate_settings_for_pipeline(settings: Settings, provider: str) -> None:
             + ", ".join(missing)
             + ". Preencha-as no .env antes de rodar o pipeline."
         )
-    validate_curator_settings(settings, provider)
+    if not settings.fast_sync:
+        validate_curator_settings(settings, provider)
 
 
 def _sync_existing_prices(repo: PromocoesRepo, promocoes: list[Promocao], ja_existentes: set[str]) -> int:
@@ -82,8 +84,11 @@ def run_once(provider: str | None = None) -> dict[str, int]:
         url=settings.supabase_url,  # type: ignore[arg-type]
         service_role_key=settings.supabase_service_role_key,  # type: ignore[arg-type]
     )
-    curator = create_curator(settings, provider=resolved_provider)
-    logger.info("Curadoria via provider: %s", resolved_provider)
+    curator = None if settings.fast_sync else create_curator(settings, provider=resolved_provider)
+    if settings.fast_sync:
+        logger.info("Modo FAST_SYNC: novos itens entram sem IA (filtros ML apenas).")
+    else:
+        logger.info("Curadoria via provider: %s", resolved_provider)
 
     stats = {
         "fetched": 0,
@@ -124,6 +129,33 @@ def run_once(provider: str | None = None) -> dict[str, int]:
 
     stats["novos"] = len(novos)
     for promo in novos:
+        if settings.fast_sync:
+            categoria = normalizar_categoria(promo.categoria)
+            if not categoria:
+                stats["rejeitados"] += 1
+                logger.warning(
+                    "Sem categoria mapeada, ignorado: [%s] %s",
+                    promo.external_id,
+                    _truncate(promo.titulo, 60),
+                )
+                continue
+            try:
+                repo.upsert_approved(
+                    promo,
+                    titulo=promo.titulo,
+                    descricao=(
+                        f"{promo.percentual_desconto:.0f}% OFF · "
+                        f"de R$ {promo.preco_original:.2f} por R$ {promo.preco_desconto:.2f}"
+                    ),
+                    categoria=categoria,
+                )
+                stats["aprovados"] += 1
+            except Exception:
+                logger.exception(
+                    "Falha ao gravar promoção %s no Supabase.", promo.external_id
+                )
+            continue
+
         decision = curator.curate(promo)
         if not decision.aprovada or not decision.titulo:
             stats["rejeitados"] += 1

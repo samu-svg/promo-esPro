@@ -51,6 +51,9 @@ class Settings:
     # Limpeza de promoções que sumiram da fonte
     stale_promo_hours: float
 
+    # Sincroniza novos itens sem IA (usa título/categoria do ML)
+    fast_sync: bool
+
     # Supabase (usado na Etapa 3)
     supabase_url: str | None
     supabase_service_role_key: str | None
@@ -73,7 +76,8 @@ def load_settings() -> Settings:
         min_rating=_float("MIN_RATING", 4.0),
         max_items_per_category=_int("MAX_ITEMS_PER_CATEGORY", 50),
         scraper_interval_minutes=_int("SCRAPER_INTERVAL_MINUTES", 30),
-        stale_promo_hours=_float("STALE_PROMO_HOURS", 2.0),
+        stale_promo_hours=_float("STALE_PROMO_HOURS", 168.0),
+        fast_sync=os.getenv("FAST_SYNC", "true").lower() in ("1", "true", "yes"),
         supabase_url=os.getenv("SUPABASE_URL"),
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
         curator_provider=os.getenv("CURATOR_PROVIDER", "openai"),
