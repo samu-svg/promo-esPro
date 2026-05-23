@@ -77,7 +77,7 @@ def load_settings() -> Settings:
         meli_site_id=os.getenv("MELI_SITE_ID", "MLB"),
         min_discount_percent=_float("MIN_DISCOUNT_PERCENT", 30.0),
         min_rating=_float("MIN_RATING", 4.0),
-        max_items_per_category=_int("MAX_ITEMS_PER_CATEGORY", 50),
+        max_items_per_category=_int("MAX_ITEMS_PER_CATEGORY", 0),
         scraper_interval_minutes=_int("SCRAPER_INTERVAL_MINUTES", 30),
         stale_promo_hours=_float("STALE_PROMO_HOURS", 168.0),
         fast_sync=os.getenv("FAST_SYNC", "true").lower() in ("1", "true", "yes"),

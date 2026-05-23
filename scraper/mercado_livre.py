@@ -10,7 +10,7 @@ Vantagens:
 - Não depende de scopes OAuth para busca de produtos.
 - A página já filtra itens em promoção (todos têm desconto real).
 - Suporta filtro por categoria via query string `?category=<cat_id>`.
-- Retorna até 48 itens por página (padrão da página de ofertas ML).
+- Pagina com `?page=2`, `?page=3`, … (~48 itens por página).
 """
 from __future__ import annotations
 
@@ -35,6 +35,8 @@ _UA = (
 )
 _OFERTAS_URL = "https://www.mercadolivre.com.br/ofertas"
 _IMG_BASE = "https://http2.mlstatic.com/D_{pic_id}-O.webp"
+_DEFAULT_PAGE_SIZE = 48
+_PAGE_FETCH_DELAY_SECONDS = 0.35
 
 
 @dataclass
@@ -173,22 +175,60 @@ class MercadoLivreClient:
         self,
         category_id: str,
         min_discount_percent: float = 30.0,
-        limit: int = 50,
-    ) -> list[dict[str, Any]]:
-        """Retorna itens em promoção de uma categoria, já parseados."""
-        url = f"{_OFERTAS_URL}?category={category_id}"
-        try:
-            page = self._fetch_page_data(url)
-        except MercadoLivreError as exc:
-            logger.warning("Busca falhou para categoria %s: %s", category_id, exc)
-            return []
+        max_items: int = 0,
+    ) -> list[Promocao]:
+        """Retorna itens em promoção de uma categoria, paginando até o fim.
 
-        raw_items = page.get("items", [])
-        result = []
-        for raw in raw_items:
-            promo = self._parse_item(raw, min_discount_percent)
-            if promo is not None:
-                result.append(promo)
+        `max_items` > 0 limita quantos itens parseados (pós filtro de desconto)
+        são retornados; 0 = todas as páginas disponíveis na listagem ML.
+        """
+        result: list[Promocao] = []
+        page_num = 1
+
+        while True:
+            url = f"{_OFERTAS_URL}?category={category_id}&page={page_num}"
+            try:
+                page_data = self._fetch_page_data(url)
+            except MercadoLivreError as exc:
+                if page_num == 1:
+                    logger.warning(
+                        "Busca falhou para categoria %s: %s", category_id, exc
+                    )
+                break
+
+            raw_items = page_data.get("items", [])
+            if not raw_items:
+                break
+
+            for raw in raw_items:
+                promo = self._parse_item(raw, min_discount_percent)
+                if promo is not None:
+                    result.append(promo)
+                    if max_items > 0 and len(result) >= max_items:
+                        logger.debug(
+                            "Categoria %s: limite max_items=%d atingido na página %d.",
+                            category_id,
+                            max_items,
+                            page_num,
+                        )
+                        return result
+
+            paging = page_data.get("paging", {})
+            total = int(paging.get("total") or 0)
+            offset = int(paging.get("offset", (page_num - 1) * _DEFAULT_PAGE_SIZE))
+            if total <= 0 or offset + len(raw_items) >= total:
+                break
+
+            page_num += 1
+            time.sleep(_PAGE_FETCH_DELAY_SECONDS)
+
+        if page_num > 1:
+            logger.debug(
+                "Categoria %s: %d página(s), %d itens com desconto válido.",
+                category_id,
+                page_num,
+                len(result),
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -240,7 +280,7 @@ class MercadoLivreClient:
             items = self.search_offers(
                 cat_id,
                 min_discount_percent=min_discount_percent,
-                limit=max_items_per_category,
+                max_items=max_items_per_category,
             )
 
             aprovados = [

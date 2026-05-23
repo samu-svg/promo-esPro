@@ -19,7 +19,7 @@ jobs:
   run:
     name: Curar promoções
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: scraper
@@ -49,7 +49,7 @@ jobs:
           # --- Filtros ---
           MIN_DISCOUNT_PERCENT: "30"
           MIN_RATING: "4.0"
-          MAX_ITEMS_PER_CATEGORY: "50"
+          MAX_ITEMS_PER_CATEGORY: "0"
           STALE_PROMO_HOURS: "168"
           FAST_SYNC: "true"
           AI_CLASSIFY: "true"
