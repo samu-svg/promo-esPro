@@ -3,7 +3,7 @@
 Dois componentes a colocar no ar:
 
 1. **Front-end Next.js** → Vercel (CDN global + Realtime via Supabase).
-2. **Scraper Python** → GitHub Actions cron a cada 30 min (gratuito, sem servidor).
+2. **Scraper Python** → GitHub Actions cron a cada 3 horas (gratuito, sem servidor).
 
 A estrutura é um **monorepo simples**: Next.js no root, scraper Python em
 `scraper/`, workflow do cron em `.github/workflows/scraper.yml`.
@@ -29,7 +29,7 @@ No repositório `samu-svg/promo-esPro` no GitHub:
 3. Vá em **Actions → scraper-promocoes → Enable workflow** (se aparecer botão).
 4. Clique em **Run workflow → Run** pra disparar a primeira rodada manualmente.
 
-Depois disso o cron roda sozinho a cada 30 minutos.
+Depois disso o cron roda sozinho a cada 3 horas (em :00 UTC).
 
 > Custo do GitHub Actions: 2 000 min/mês grátis. Cada rodada ~2–4 min,
 > então cabe folgado (~1 200–1 400 min/mês).

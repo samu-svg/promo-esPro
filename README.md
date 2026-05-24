@@ -7,7 +7,7 @@ tempo real via Supabase.
 ## Arquitetura
 
 ```
-┌──────────────────┐    a cada 30 min    ┌─────────────────┐
+┌──────────────────┐    a cada 3 h       ┌─────────────────┐
 │ Mercado Livre API│ ──────────────────▶ │  scraper (Py)   │
 └──────────────────┘                     └────────┬────────┘
                                                   │ filtra desc>=30% e ★>=4
@@ -60,7 +60,7 @@ promoçõesPro/
 ├── lib/
 ├── supabase/migrations/
 ├── scraper/                ← Python: busca + curadoria + persistência
-├── .github/workflows/      ← cron do scraper a cada 30 min
+├── .github/workflows/      ← cron do scraper a cada 3 horas
 ├── package.json
 └── next.config.ts
 ```
