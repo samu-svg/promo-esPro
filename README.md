@@ -60,7 +60,7 @@ promoçõesPro/
 ├── lib/
 ├── supabase/migrations/
 ├── scraper/                ← Python: busca + curadoria + persistência
-├── .github/workflows/      ← cron do scraper a cada 3 horas
+├── .github/workflows/      ← cron do scraper a cada 4 horas
 ├── package.json
 └── next.config.ts
 ```

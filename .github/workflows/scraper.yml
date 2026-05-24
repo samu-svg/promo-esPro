@@ -1,10 +1,10 @@
 name: scraper-promocoes
 
-# Roda o scraper Python a cada 3 horas (cron GitHub Actions, :00 UTC).
+# Roda o scraper Python a cada 4 horas (6 execuções/dia, cron GitHub Actions, :00 UTC).
 # Também pode ser disparado manualmente em Actions → "Run workflow".
 on:
   schedule:
-    - cron: "0 */3 * * *"
+    - cron: "0 */4 * * *"
   workflow_dispatch:
 
 # Evita execuções sobrepostas (uma rodada nunca termina antes da próxima começar).
