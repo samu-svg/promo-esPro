@@ -184,6 +184,9 @@ class MercadoLivreClient:
         """
         result: list[Promocao] = []
         page_num = 1
+        prev_offset = -1
+        # O ML não avança offset além de ~1000; páginas seguintes repetem os mesmos itens.
+        _ML_MAX_OFFSET = 1000
 
         while True:
             url = f"{_OFERTAS_URL}?category={category_id}&page={page_num}"
@@ -216,9 +219,25 @@ class MercadoLivreClient:
             paging = page_data.get("paging", {})
             total = int(paging.get("total") or 0)
             offset = int(paging.get("offset", (page_num - 1) * _DEFAULT_PAGE_SIZE))
-            if total <= 0 or offset + len(raw_items) >= total:
+
+            if total > 0 and offset + len(raw_items) >= total:
+                break
+            if offset >= _ML_MAX_OFFSET:
+                logger.debug(
+                    "Categoria %s: offset=%d (limite ML), encerrando paginação.",
+                    category_id,
+                    offset,
+                )
+                break
+            if page_num > 1 and offset == prev_offset:
+                logger.debug(
+                    "Categoria %s: offset repetido (%d), encerrando paginação.",
+                    category_id,
+                    offset,
+                )
                 break
 
+            prev_offset = offset
             page_num += 1
             time.sleep(_PAGE_FETCH_DELAY_SECONDS)
 
